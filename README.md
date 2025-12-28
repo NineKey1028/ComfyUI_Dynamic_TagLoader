@@ -93,6 +93,8 @@ STRING: 組合後的完整 Prompt，連到 CLIP Text Encode。
 
 <img width="1453" height="621" alt="ComfyUI_Dynamic_TagLoader_03" src="https://github.com/user-attachments/assets/c80a07a7-c376-4647-aa13-e91df20df472" />
 
+[圖中使用的Lora](https://civitai.com/models/2250459/zhao-zenless-zone-zero-illustrious)
+
 使用 Saver：
 
 建立資料夾 Costumes，分別儲存 3 個檔案（包含對應的 LoRA 設定）。
