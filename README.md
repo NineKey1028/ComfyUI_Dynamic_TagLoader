@@ -32,13 +32,16 @@ ComfyUI Dynamic Tag & LoRA Manager
 進入您的 ComfyUI custom_nodes 目錄：
 
 Bash
-
+```
 cd ComfyUI/custom_nodes/
-複製此專案：
+```
 
 Bash
 
+```
 git clone https://github.com/NineKey1028/ComfyUI_Dynamic_TagLoader.git
+```
+
 重新啟動 ComfyUI。
 
 📖 使用教學 (Usage Guide)
