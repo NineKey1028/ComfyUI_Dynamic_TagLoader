@@ -1,5 +1,8 @@
 ComfyUI Dynamic Tag & LoRA Manager
-這是一個強大的 ComfyUI 擴充插件，旨在解決 Prompt 管理與 LoRA 組合繁瑣的問題。它包含兩個核心節點：Saver（存檔） 與 Loader（讀取與生成）。
+
+旨在解決 Prompt 管理與 LoRA 組合繁瑣的問題。它包含兩個核心節點：Saver（存檔） 與 Loader（讀取與生成）。
+
+<img width="1362" height="423" alt="ComfyUI_Dynamic_TagLoader_01" src="https://github.com/user-attachments/assets/9073f9ae-3847-40b4-aa3d-3617de0171ae" />
 
 透過這個插件，您可以將常用的 Prompt 與 LoRA 設定儲存為模組化的文本，並在生成時透過「排列組合」的方式，自動讀取文本中的 LoRA 標籤並掛載模型，實現高效率的批量生成。
 
@@ -62,6 +65,8 @@ Folder / Filename: 設定存檔的資料夾與檔名（檔案將存於插件目�
 
 執行: 連接任意輸出並執行 Prompt，檔案即會建立。
 
+<img width="1593" height="646" alt="ComfyUI_Dynamic_TagLoader_02" src="https://github.com/user-attachments/assets/06c2c6c2-6687-4c41-911f-95e8e1701d88" />
+
 
 
 2. ⚡ Dynamic Tag Loader
@@ -85,6 +90,8 @@ STRING: 組合後的完整 Prompt，連到 CLIP Text Encode。
 
 🚀 工作流範例 (Workflow Example)
 場景：您想要測試 3 種不同的服裝 LoRA，配合 2 種不同的背景 Prompt。
+
+<img width="1453" height="621" alt="ComfyUI_Dynamic_TagLoader_03" src="https://github.com/user-attachments/assets/c80a07a7-c376-4647-aa13-e91df20df472" />
 
 使用 Saver：
 
