@@ -1,5 +1,8 @@
 ComfyUI Dynamic Tag & LoRA Manager
-這是一個強大的 ComfyUI 擴充插件，旨在解決 Prompt 管理與 LoRA 組合繁瑣的問題。它包含兩個核心節點：Saver（存檔） 與 Loader（讀取與生成）。
+
+旨在解決 Prompt 管理與 LoRA 組合繁瑣的問題。它包含兩個核心節點：Saver（存檔） 與 Loader（讀取與生成）。
+
+<img width="1362" height="423" alt="ComfyUI_Dynamic_TagLoader_01" src="https://github.com/user-attachments/assets/9073f9ae-3847-40b4-aa3d-3617de0171ae" />
 
 透過這個插件，您可以將常用的 Prompt 與 LoRA 設定儲存為模組化的文本，並在生成時透過「排列組合」的方式，自動讀取文本中的 LoRA 標籤並掛載模型，實現高效率的批量生成。
 
@@ -62,6 +65,8 @@ Folder / Filename: 設定存檔的資料夾與檔名（檔案將存於插件目�
 
 執行: 連接任意輸出並執行 Prompt，檔案即會建立。
 
+<img width="1593" height="646" alt="ComfyUI_Dynamic_TagLoader_02" src="https://github.com/user-attachments/assets/06c2c6c2-6687-4c41-911f-95e8e1701d88" />
+
 
 
 2. ⚡ Dynamic Tag Loader
@@ -86,6 +91,10 @@ STRING: 組合後的完整 Prompt，連到 CLIP Text Encode。
 🚀 工作流範例 (Workflow Example)
 場景：您想要測試 3 種不同的服裝 LoRA，配合 2 種不同的背景 Prompt。
 
+<img width="1453" height="621" alt="ComfyUI_Dynamic_TagLoader_03" src="https://github.com/user-attachments/assets/c80a07a7-c376-4647-aa13-e91df20df472" />
+
+[圖中使用的Lora](https://civitai.com/models/2250459/zhao-zenless-zone-zero-illustrious)
+
 使用 Saver：
 
 建立資料夾 Costumes，分別儲存 3 個檔案（包含對應的 LoRA 設定）。
@@ -104,23 +113,6 @@ Loader 會自動輸出 3 x 2 = 6 組變數。
 
 ComfyUI 將自動連續生成 6 張圖片，每張圖都應用了正確的 LoRA 和背景。
 
-📂 檔案結構 (Directory Structure)
-您的標籤檔案將儲存在插件目錄下的 tags 資料夾中，結構如下：
-
-ComfyUI/
-└── custom_nodes/
-    └── ComfyUI-Dynamic-Tag-Manager/
-        ├── tags/                # 所有存檔都在這裡
-        │   ├── my_folder_A/
-        │   │   ├── prompt1.txt
-        │   │   └── prompt2.txt
-        │   └── character_loras/
-        │       └── miku.txt
-        ├── dynamic_loader.js
-        ├── dynamic_saver.js
-        ├── loader_node.py
-        ├── saver_node.py
-        └── ...
 ⚠️ 注意事項
 Batch Size: 由於 Loader 輸出的是列表（List），請確保後續節點支援批次處理。通常 ComfyUI 會自動處理列表執行。
 
