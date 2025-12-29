@@ -167,7 +167,8 @@ class DynamicTagLoaderJS:
 
                 for f_name in files_to_read:
                     raw_content = self._read_file(os.path.join(folder_path, f_name))
-                    if raw_content:
+                    
+                    if raw_content is not None:
                         cleaned_text, loras = self._parse_and_strip_lora(raw_content)
                         current_group_data.append((cleaned_text, loras))
                 
@@ -241,6 +242,6 @@ class DynamicTagLoaderJS:
         
         # 防止空列表導致 ComfyUI 報錯
         if not final_prompts:
-             return ([], [], [], [])
-             
+            return ([], [], [], [])
+        
         return (final_models, final_clips, final_conditionings, final_prompts)
