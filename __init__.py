@@ -2,6 +2,7 @@ import os
 import folder_paths
 from .loader_node import DynamicTagLoaderJS
 from .saver_node import DynamicTagSaver
+from .iterator_node import DynamicTagIterator  # [新增] 匯入新節點
 
 # 嘗試導入 ComfyUI 伺服器模組
 try:
@@ -44,13 +45,15 @@ if PromptServer:
 # 節點類別映射
 NODE_CLASS_MAPPINGS = {
     "DynamicTagLoaderJS": DynamicTagLoaderJS,
-    "DynamicTagSaver": DynamicTagSaver
+    "DynamicTagSaver": DynamicTagSaver,
+    "DynamicTagIterator": DynamicTagIterator  # [新增] 註冊類別
 }
 
 # 節點顯示名稱映射
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DynamicTagLoaderJS": "⚡Dynamic Tag Loader",
-    "DynamicTagSaver": "💾 Dynamic Tag Saver"
+    "DynamicTagSaver": "💾 Dynamic Tag Saver",
+    "DynamicTagIterator": "🔄 Dynamic Tag Iterator" # [新增] 顯示名稱
 }
 
 # 前端資源目錄
