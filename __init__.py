@@ -2,9 +2,11 @@ import os
 import folder_paths
 from .loader_node import DynamicTagLoaderJS
 from .saver_node import DynamicTagSaver
-from .iterator_node import DynamicTagIterator  # [新增] 匯入新節點
+from .iterator_node import DynamicTagIterator
 
-# 嘗試導入 ComfyUI 伺服器模組
+# ==============================================================================
+# 模組導入與環境檢查
+# ==============================================================================
 try:
     from server import PromptServer
     from aiohttp import web
@@ -12,51 +14,75 @@ except ImportError:
     PromptServer = None
     web = None
 
-# 初始化路徑配置：確保 tags 目錄存在
+# ==============================================================================
+# 全域路徑配置
+# ==============================================================================
 NODE_FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 TAGS_DIR = os.path.join(NODE_FILE_PATH, "tags")
 
+# 若 tags 目錄不存在則自動建立，確保基本執行環境
 if not os.path.exists(TAGS_DIR):
     os.makedirs(TAGS_DIR)
 
-# 註冊 API 路由
+# ==============================================================================
+# API 路由註冊 (Server-Side)
+# ==============================================================================
 if PromptServer:
     
-    # API: 讀取 tags 資料夾結構與 .txt 檔案列表
     @PromptServer.instance.routes.get("/custom_nodes/tags")
     async def get_tags_data(request):
+        """
+        API: 獲取 Tags 目錄結構
+        功能: 遞迴遍歷 tags 資料夾，回傳包含 .txt 檔案的目錄結構供前端選單使用。
+        """
         data = {}
         if os.path.exists(TAGS_DIR):
-            # 取得所有子目錄
-            subdirs = sorted([d for d in os.listdir(TAGS_DIR) if os.path.isdir(os.path.join(TAGS_DIR, d))])
-            for subdir in subdirs:
-                subdir_path = os.path.join(TAGS_DIR, subdir)
-                # 取得子目錄下的 .txt 檔案
-                files = sorted([f for f in os.listdir(subdir_path) if f.endswith(".txt")])
-                data[subdir] = ["ALL"] + files
+            # 使用 os.walk 進行遞迴遍歷，以支援多層級子資料夾
+            for root, dirs, files in os.walk(TAGS_DIR):
+                # 篩選出目標檔案類型 (.txt)
+                txt_files = sorted([f for f in files if f.endswith(".txt")])
+                
+                # 過濾空目錄：僅將包含有效 .txt 檔案的目錄加入索引
+                if txt_files:
+                    # 計算相對路徑 (例如: "Style/Anime")
+                    rel_path = os.path.relpath(root, TAGS_DIR)
+                    
+                    # 根目錄標識處理
+                    if rel_path == ".":
+                        rel_path = "Root"
+                    
+                    # 跨平台相容性處理：統一使用 POSIX 風格路徑分隔符 (/) 以確保前端顯示一致
+                    rel_path = rel_path.replace("\\", "/")
+                    
+                    # 建構回傳資料：加入 "ALL" 選項作為批次讀取標識
+                    data[rel_path] = ["ALL"] + txt_files
+                    
         return web.json_response(data)
 
-    # API: 獲取 ComfyUI 系統內可用的 LoRA 列表 (供前端 JS 使用)
     @PromptServer.instance.routes.get("/custom_nodes/loras_list")
     async def get_loras_list(request):
+        """
+        API: 獲取系統 LoRA 列表
+        功能: 讀取 ComfyUI 系統路徑下的 LoRA 模型清單。
+        """
         loras = folder_paths.get_filename_list("loras")
         return web.json_response(loras)
 
-# 節點類別映射
+# ==============================================================================
+# 節點映射與顯示名稱
+# ==============================================================================
 NODE_CLASS_MAPPINGS = {
     "DynamicTagLoaderJS": DynamicTagLoaderJS,
     "DynamicTagSaver": DynamicTagSaver,
-    "DynamicTagIterator": DynamicTagIterator  # [新增] 註冊類別
+    "DynamicTagIterator": DynamicTagIterator
 }
 
-# 節點顯示名稱映射
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DynamicTagLoaderJS": "⚡Dynamic Tag Loader",
     "DynamicTagSaver": "💾 Dynamic Tag Saver",
-    "DynamicTagIterator": "🔄 Dynamic Tag Iterator" # [新增] 顯示名稱
+    "DynamicTagIterator": "🔄 Dynamic Tag Iterator"
 }
 
-# 前端資源目錄
 WEB_DIRECTORY = "./web"
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
