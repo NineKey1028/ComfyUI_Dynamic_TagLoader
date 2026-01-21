@@ -3,6 +3,7 @@ import folder_paths
 from .loader_node import DynamicTagLoaderJS
 from .saver_node import DynamicTagSaver
 from .iterator_node import DynamicTagIterator
+from .image_info_node import ImageWorkflowExtractor
 
 # ==============================================================================
 # 模組導入與環境檢查
@@ -74,13 +75,15 @@ if PromptServer:
 NODE_CLASS_MAPPINGS = {
     "DynamicTagLoaderJS": DynamicTagLoaderJS,
     "DynamicTagSaver": DynamicTagSaver,
-    "DynamicTagIterator": DynamicTagIterator
+    "DynamicTagIterator": DynamicTagIterator,
+    "WorkflowMetadataReader": ImageWorkflowExtractor,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DynamicTagLoaderJS": "⚡Dynamic Tag Loader",
     "DynamicTagSaver": "💾 Dynamic Tag Saver",
-    "DynamicTagIterator": "🔄 Dynamic Tag Iterator"
+    "DynamicTagIterator": "🔄 Dynamic Tag Iterator",
+    "WorkflowMetadataReader": "🔍 Workflow Metadata Reader",
 }
 
 WEB_DIRECTORY = "./web"
