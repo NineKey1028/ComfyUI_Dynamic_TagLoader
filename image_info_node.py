@@ -11,7 +11,7 @@ class ImageWorkflowExtractor:
             "required": {
                 "image_or_dir": ("STRING", {"default": "C:/ComfyUI/output"}),
                 "search_by": (["ID", "Type"], {"default": "ID"}),
-                "search_query": ("STRING", {"default": "71"}),
+                "search_query": ("STRING", {"default": "00"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             },
         }
