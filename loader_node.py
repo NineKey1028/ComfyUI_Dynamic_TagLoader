@@ -6,15 +6,19 @@ import folder_paths
 import comfy.sd
 import comfy.utils
 
-# 定義基礎路徑常數
+# -----------------------------------------------------------
+# 基礎路徑配置
+# -----------------------------------------------------------
 NODE_FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 TAGS_DIR = os.path.join(NODE_FILE_PATH, "tags")
 
 class DynamicTagLoaderJS:
     """
-    ComfyUI 自定義節點：動態 Tag 載入器
-    功能：根據前端傳入的 JSON 設定，動態讀取資料夾內的 Prompt 檔案，
-    並支援 LoRA 的自動解析與載入。
+    ComfyUI 自定義節點：動態標籤加載器 (Dynamic Tag Loader)
+    核心功能：
+    1. 解析前端傳入的 JSON 配置，讀取對應的標籤檔案。
+    2. 自動提取文本中的 LoRA 語法並應用於模型與 CLIP。
+    3. 針對多個標籤群組生成「笛卡兒積 (Cartesian Product)」組合，實現批次生成。
     """
 
     @classmethod
@@ -30,21 +34,29 @@ class DynamicTagLoaderJS:
             }
         }
 
-    # 定義輸出類型與名稱
+    # 輸出定義：模型、CLIP、Conditioning、原始 Prompt、生成的組合總數
     RETURN_TYPES = ("MODEL", "CLIP", "CONDITIONING", "STRING", "INT")
     RETURN_NAMES = ("model", "clip", "positive", "prompt", "count")
-    OUTPUT_IS_LIST = (True, True, True, True, False) # 注意: count 為單一數值，非列表
+    # 標示輸出為列表形式，以便於 Batch 處理
+    OUTPUT_IS_LIST = (True, True, True, True, False) 
     
     FUNCTION = "process"
     CATEGORY = "Custom/TagLoader"
 
     @classmethod
     def IS_CHANGED(s, **kwargs):
-        # 設定為 NaN 以確保每次執行時都會重新計算 (避免快取導致不更新)
+        """強迫 ComfyUI 忽略快取機制，確保每次執行皆重新解析檔案內容"""
         return float("nan")
 
     def _parse_and_strip_lora(self, text):
-        """解析並分離文本中的 <lora:...> 語法，回傳純淨文本與 LoRA 設定列表"""
+        """
+        Regex 解析器：提取文本中的 <lora:name:weight> 標籤。
+        
+        Args:
+            text (str): 原始 Prompt 文本
+        Returns:
+            tuple: (清理後的文本, LoRA 配置列表 [(name, weight), ...])
+        """
         if not text:
             return "", []
         lora_pattern = r"<lora:([^>:]+)(?::([0-9.]+))?>"
@@ -54,23 +66,32 @@ class DynamicTagLoaderJS:
             strength = float(match.group(2)) if match.group(2) else 1.0
             found_loras.append((lora_name, strength))
         
-        # 清除 LoRA 標籤並規範化換行符號
+        # 移除 LoRA 語法並規範化空白與換行符號
         cleaned_text = re.sub(lora_pattern, "", text)
         cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text)
         cleaned_text = cleaned_text.strip()
         return cleaned_text, found_loras
 
     def _load_lora(self, model, clip, lora_name, strength_model, strength_clip):
-        """動態載入指定的 LoRA 模型並應用於 Model 與 CLIP"""
+        """
+        動態 LoRA 加載邏輯：包含檔案路徑檢索與模糊匹配。
+        
+        Args:
+            model: 模型實例
+            clip: CLIP 實例
+            lora_name: LoRA 檔案名稱
+            strength_model: 模型強度
+            strength_clip: CLIP 強度
+        """
         if model is None or clip is None:
             return model, clip
             
-        # 嘗試搜尋 LoRA 檔案路徑
+        # 優先執行完整路徑匹配
         lora_path = folder_paths.get_full_path("loras", lora_name)
         if lora_path is None:
             lora_path = folder_paths.get_full_path("loras", f"{lora_name}.safetensors")
             
-        # 若完全匹配失敗，嘗試模糊搜尋 (忽略副檔名大小寫)
+        # 備選方案：執行不區分大小寫的模糊搜索 (忽略副檔名)
         if lora_path is None:
             available_loras = folder_paths.get_filename_list("loras")
             target_name = lora_name.lower()
@@ -87,6 +108,7 @@ class DynamicTagLoaderJS:
             return model, clip
             
         try:
+            # 調用 ComfyUI 核心函數加載 LoRA 權重並應用至 Patch 隊列
             lora_model = comfy.utils.load_torch_file(lora_path, safe_load=True)
             model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora_model, strength_model, strength_clip)
             return model_lora, clip_lora
@@ -95,7 +117,7 @@ class DynamicTagLoaderJS:
             return model, clip
 
     def _read_file(self, path):
-        """安全讀取檔案內容"""
+        """IO 輔助函數：執行安全讀取並過濾結尾空白"""
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 return f.read().strip()
@@ -104,11 +126,11 @@ class DynamicTagLoaderJS:
 
     def process(self, text_input, tag_settings, model=None, clip=None, **kwargs):
         """
-        核心處理函數
-        1. 解析 tag_settings JSON 設定
-        2. 讀取指定資料夾/檔案的 Prompt
-        3. 組合 Prompt 並解析其中的 LoRA
-        4. 生成最終的 Conditioning 與 Model 輸出
+        主要處理工作流：
+        1. 解析 tag_settings JSON 設定，按索引排序。
+        2. 遍歷檔案系統獲取 Prompt 片段，並分離文本與 LoRA 設定。
+        3. 利用 itertools.product 計算所有可能的 Prompt 組合 (笛卡兒積)。
+        4. 為每組組合進行模型加權 (LoRA) 與文本編碼 (Conditioning)。
         """
         delimiter = "\n" 
         try:
@@ -116,10 +138,11 @@ class DynamicTagLoaderJS:
         except Exception as e:
             settings = {}
 
+        # 預處理全域輸入 (Global Prompt)
         base_text_cleaned, base_loras = self._parse_and_strip_lora(text_input)
         prompts_groups = []
         
-        # 依照前端 UI 順序排序 (key 為索引值)
+        # 根據前端 UI 設定的索引順序進行數據構造
         sorted_keys = sorted(settings.keys(), key=lambda x: int(x))
         
         for key in sorted_keys:
@@ -127,19 +150,19 @@ class DynamicTagLoaderJS:
             item_type = item.get("type", "file")
 
             if item_type == "text":
-                # 處理純文字輸入
+                # 處理純文本組件
                 raw_text = item.get("text", "")
                 if raw_text:
                     cleaned_text, loras = self._parse_and_strip_lora(raw_text)
                     prompts_groups.append([(cleaned_text, loras)])
             else:
-                # 處理檔案讀取
+                # 處理標籤檔案組件
                 folder_name = item.get("folder")
                 file_name = item.get("file")
                 if not folder_name or not file_name:
                     continue
                 
-                # 路徑解析：處理根目錄標識與相對路徑轉換 (相容多層級子目錄)
+                # 路徑安全化處理
                 if folder_name == "Root":
                     folder_path = TAGS_DIR
                 else:
@@ -148,15 +171,13 @@ class DynamicTagLoaderJS:
                 current_group_data = [] 
                 files_to_read = []
                 
-                # 檔案選取策略
+                # 檔案檢索策略：若選擇 "ALL" 則枚舉目錄下所有 .txt 檔案
                 if file_name == "ALL":
                     if os.path.exists(folder_path):
-                        # 僅列出當前目錄下的 .txt 檔案 (不包含子目錄內容，符合邏輯設計)
                         files_to_read = sorted([f for f in os.listdir(folder_path) if f.endswith(".txt")])
                 else:
                     files_to_read = [file_name]
 
-                # 讀取檔案內容
                 for f_name in files_to_read:
                     raw_content = self._read_file(os.path.join(folder_path, f_name))
                     if raw_content is not None:
@@ -166,7 +187,7 @@ class DynamicTagLoaderJS:
                 if current_group_data:
                     prompts_groups.append(current_group_data)
 
-        # 產生所有組合 (笛卡兒積)
+        # 核心運算：計算所有標籤組件的笛卡兒積組合
         if not prompts_groups:
             combinations = [([],)] if base_text_cleaned or base_loras else []
         else:
@@ -177,7 +198,7 @@ class DynamicTagLoaderJS:
         final_prompts = []
         final_conditionings = []
 
-        # 遍歷組合並構建輸出
+        # 遍歷組合，構建最終輸出列表
         for combo in combinations:
             current_texts = []
             if base_text_cleaned:
@@ -185,7 +206,7 @@ class DynamicTagLoaderJS:
             current_texts.extend([item[0] for item in combo if item and item[0]])
             combined_prompt = delimiter.join(current_texts)
             
-            # 合併全域與局部 LoRA
+            # 整合全域與局部 (檔案內) 的 LoRA 配置
             all_loras = []
             if base_loras:
                 all_loras.extend(base_loras)
@@ -193,14 +214,14 @@ class DynamicTagLoaderJS:
                 if item:
                     all_loras.extend(item[1]) 
             
-            # 應用 LoRA 至 Model 與 CLIP
+            # 執行 LoRA 疊加應用
             current_model = model
             current_clip = clip
             if current_model is not None and current_clip is not None and all_loras:
                 for lora_name, strength in all_loras:
                     current_model, current_clip = self._load_lora(current_model, current_clip, lora_name, strength, strength)
             
-            # CLIP Tokenize 與 Encode
+            # 文本編碼處理：將組合成的 Prompt 轉換為 Conditioning 向量
             current_conditioning = None
             if current_clip is not None:
                 try:
@@ -216,9 +237,10 @@ class DynamicTagLoaderJS:
             final_conditionings.append(current_conditioning)
 
         count = len(final_prompts)
-        print(f"JS Loader: Generated {count} combinations.")
+        print(f"[DynamicTagLoader] Logic: Generated {count} batch combinations.")
         
         if not final_prompts:
             return ([], [], [], [], 0)
         
+        # 回傳封裝後的組合列表
         return (final_models, final_clips, final_conditionings, final_prompts, count)

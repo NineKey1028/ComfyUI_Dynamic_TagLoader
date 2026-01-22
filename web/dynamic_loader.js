@@ -12,42 +12,60 @@ app.registerExtension({
                 const node = this;
 
                 // -----------------------------------------------------------
-                // 1. 初始化設定與資料結構
+                // 1. 核心狀態與隱藏組件初始化
                 // -----------------------------------------------------------
+                node.expectedSize = null; // 儲存從工作流 (Workflow) 讀取的原始尺寸，防止非同步載入後塌陷
                 
-                // 找到後端定義的 hidden widget，將其隱藏並設為無高度
+                // 查找並隱藏用於儲存 JSON 狀態的 widget，使其不顯示於 UI 上
                 const settingsWidget = node.widgets.find(w => w.name === "tag_settings");
                 if (settingsWidget) {
                     settingsWidget.type = "hidden";
                     settingsWidget.computeSize = () => [0, -4]; 
                 }
 
-                node.tagsData = {};        // 儲存從伺服器抓取的 tags 資料結構
-                node.dynamicWidgets = [];  // 儲存當前動態生成的 widget 群組
-                node.addTagButton = null;  // 按鈕參照
+                node.tagsData = {};        // 儲存從伺服器獲取的標籤結構數據
+                node.dynamicWidgets = [];  // 管理動態產生的組件群組 (Folder + File)
+                node.addTagButton = null;  // 新增按鈕實例暫存
 
                 // -----------------------------------------------------------
-                // 2. 狀態同步 (UI -> JSON)
+                // 2. 生命週期攔截：序列化配置載入 (onConfigure)
                 // -----------------------------------------------------------
-                
-                // 將當前所有動態 widget 的值打包成 JSON，寫入 settingsWidget 供後端讀取
+                const onConfigure = node.onConfigure;
+                node.onConfigure = function(data) {
+                    if (onConfigure) onConfigure.apply(this, arguments);
+                    if (data && data.size) {
+                        // 擷取工作流定義中的尺寸，用於後續內容非同步填充後的尺寸修正基準
+                        node.expectedSize = [...data.size];
+                    }
+                };
+
+                // -----------------------------------------------------------
+                // 3. UI 尺寸自適應校準邏輯
+                // -----------------------------------------------------------
+                node.fixSize = function() {
+                    const computeSize = node.computeSize();
+                    let targetHeight = computeSize[1];
+
+                    // 比較「內容所需高度」與「工作流記錄高度」，取較大值以確保 UI 完整性
+                    if (node.expectedSize && node.expectedSize[1] > targetHeight) {
+                        targetHeight = node.expectedSize[1];
+                    }
+
+                    node.size[1] = targetHeight;
+                    node.setDirtyCanvas(true, true); // 請求畫布重繪
+                };
+
+                /**
+                 * 狀態序列化：將當前動態組件的數值同步至隱藏的 settingsWidget 中
+                 */
                 const updateSettings = () => {
                     const data = {};
                     for (let i = 0; i < node.dynamicWidgets.length; i++) {
                         const group = node.dynamicWidgets[i];
-                        
-                        // 目前只處理檔案類型的群組 (保留擴充性)
                         if (group.type === "text") {
-                            data[i] = {
-                                type: "text",
-                                text: group.textWidget.value
-                            };
+                            data[i] = { type: "text", text: group.textWidget.value };
                         } else {
-                            data[i] = {
-                                type: "file",
-                                folder: group.folder.value,
-                                file: group.file.value
-                            };
+                            data[i] = { type: "file", folder: group.folder.value, file: group.file.value };
                         }
                     }
                     if (settingsWidget) {
@@ -55,40 +73,32 @@ app.registerExtension({
                     }
                 };
 
-                // -----------------------------------------------------------
-                // 3. UI 連動邏輯
-                // -----------------------------------------------------------
-                
-                // 當 Folder 改變時，更新 File 下拉選單的選項
+                /**
+                 * 下拉選單連動：根據選擇的資料夾更新對應的檔案列表
+                 */
                 function updateFileWidget(folderName, fileWidget) {
                     if (node.tagsData[folderName]) {
                         fileWidget.options.values = node.tagsData[folderName];
-                        // 如果當前選的值不在新清單中，重置為 "ALL"
                         if (!node.tagsData[folderName].includes(fileWidget.value)) {
-                            fileWidget.value = "ALL";
+                            fileWidget.value = "ALL"; // 若目前值不在新清單中，重置為預設值
                         }
                     } else {
                         fileWidget.options.values = [];
                     }
                 }
 
-                // -----------------------------------------------------------
-                // 4. 群組操作功能 (移動/刪除)
-                // -----------------------------------------------------------
-                
-                // 上移或下移指定的 Widget 群組
+                /**
+                 * 組件排序管理：移動指定的動態組件群組位置
+                 */
                 const moveGroup = (index, direction) => {
                     const newIndex = index + direction;
-                    // 邊界檢查
                     if (newIndex < 0 || newIndex >= node.dynamicWidgets.length) return;
-
-                    // 交換陣列中的位置
+                    
                     const temp = node.dynamicWidgets[index];
                     node.dynamicWidgets[index] = node.dynamicWidgets[newIndex];
                     node.dynamicWidgets[newIndex] = temp;
 
-                    // 重建 Widgets 陣列順序 (這是 ComfyUI 刷新 UI 順序的必要手段)
-                    // 1. 保留靜態 widget (非動態生成的)
+                    // 重新構建 widgets 陣列以反映 UI 排序
                     const staticWidgets = node.widgets.filter(w => 
                         w !== node.addTagButton && 
                         !node.dynamicWidgets.some(g => 
@@ -97,7 +107,6 @@ app.registerExtension({
                         )
                     );
                     
-                    // 2. 依新順序加入動態 widget
                     node.widgets = [...staticWidgets];
                     node.dynamicWidgets.forEach(g => {
                         if (g.type === "text") {
@@ -108,18 +117,16 @@ app.registerExtension({
                         }
                     });
                     
-                    // 3. 最後加回按鈕
                     if (node.addTagButton) node.widgets.push(node.addTagButton);
-
                     updateSettings();
-                    node.setDirtyCanvas(true, true); // 強制重繪
+                    node.setDirtyCanvas(true, true);
                 };
 
-                // 刪除指定的 Widget 群組
+                /**
+                 * 組件移除邏輯：銷毀組件實例並重新計算節點尺寸
+                 */
                 const removeGroup = (index) => {
                     const group = node.dynamicWidgets[index];
-                    
-                    // 從 UI 上移除對應的 widget
                     if (group.type === "text") {
                         const tIdx = node.widgets.indexOf(group.textWidget);
                         if (tIdx > -1) node.widgets.splice(tIdx, 1);
@@ -129,252 +136,150 @@ app.registerExtension({
                         const lIdx = node.widgets.indexOf(group.file);
                         if (lIdx > -1) node.widgets.splice(lIdx, 1);
                     }
-
-                    // 從資料結構中移除
                     node.dynamicWidgets.splice(index, 1);
-
                     updateSettings();
-                    node.setSize([node.size[0], node.computeSize()[1]]); // 自動調整節點高度
+                    node.setSize([node.size[0], node.computeSize()[1]]);
                     node.setDirtyCanvas(true, true);
                 };
 
                 // -----------------------------------------------------------
-                // 5. 事件攔截與右鍵選單
+                // 4. 交互事件攔截：精準組件定位與自定義右鍵選單
                 // -----------------------------------------------------------
-                
-                // 攔截滑鼠點擊位置，判斷是否點擊在某個 Widget 群組上
                 const originalGetSlotInPosition = node.getSlotInPosition;
                 node.getSlotInPosition = function(canvasX, canvasY) {
                     const slot = originalGetSlotInPosition ? originalGetSlotInPosition.apply(this, arguments) : null;
                     if (slot) return slot; 
 
+                    // 遍歷所有組件，判斷滑鼠點擊位置是否落於動態組件範圍內
                     let foundWidget = null;
                     for (const widget of this.widgets) {
                         if (widget.last_y === undefined) continue; 
                         const widgetHeight = widget.computeSize ? widget.computeSize(node.size[0])[1] : 20; 
-                        
-                        // 簡單的碰撞檢測
                         if (canvasY >= this.pos[1] + widget.last_y && canvasY < this.pos[1] + widget.last_y + widgetHeight) {
                             foundWidget = widget;
                             break;
                         }
                     }
 
-                    // 若點擊到 Widget，找出它屬於哪個群組
                     if (foundWidget) {
                         const groupIndex = node.dynamicWidgets.findIndex(g => 
                             (g.type === "text" && g.textWidget === foundWidget) || 
                             (g.type !== "text" && (g.folder === foundWidget || g.file === foundWidget))
                         );
-
                         if (groupIndex !== -1) {
-                            // 回傳特殊的 Slot 物件，觸發 getSlotMenuOptions
-                            return { 
-                                widget: foundWidget, 
-                                output: { type: "TAG_GROUP", groupIndex: groupIndex } 
-                            };
+                            // 返回虛擬 Slot 以觸發自定義 Context Menu
+                            return { widget: foundWidget, output: { type: "TAG_GROUP", groupIndex: groupIndex } };
                         }
                     }
                     return null;
                 };
 
-                // 自定義右鍵選單內容
                 const originalGetSlotMenuOptions = node.getSlotMenuOptions;
                 node.getSlotMenuOptions = function(slot) {
+                    // 若命中動態組件，顯示自定義的操作選單（上移、下移、刪除）
                     if (slot && slot.output && slot.output.type === "TAG_GROUP") {
                         const index = slot.output.groupIndex;
-                        const canMoveUp = index > 0; 
-                        const canMoveDown = index < node.dynamicWidgets.length - 1; 
-
                         const menuItems = [
-                            {
-                                content: "⬆️ Move Up",
-                                disabled: !canMoveUp,
-                                callback: () => moveGroup(index, -1)
-                            },
-                            {
-                                content: "⬇️ Move Down",
-                                disabled: !canMoveDown,
-                                callback: () => moveGroup(index, 1)
-                            },
-                            null, // 分隔線
-                            {
-                                content: "🗑️ Remove",
-                                callback: () => removeGroup(index)
-                            }
+                            { content: "⬆️ Move Up", disabled: index === 0, callback: () => moveGroup(index, -1) },
+                            { content: "⬇️ Move Down", disabled: index === node.dynamicWidgets.length - 1, callback: () => moveGroup(index, 1) },
+                            null,
+                            { content: "🗑️ Remove", callback: () => removeGroup(index) }
                         ];
-                        
-                        new LiteGraph.ContextMenu(menuItems, {
-                            title: "Tag Group Options",
-                            event: app.canvas.last_mouse_event || window.event 
-                        });
-                        
-                        return null; // 阻止預設選單
+                        new LiteGraph.ContextMenu(menuItems, { title: "Tag Group Options", event: app.canvas.last_mouse_event || window.event });
+                        return null;
                     }
-                    
                     return originalGetSlotMenuOptions ? originalGetSlotMenuOptions.apply(this, arguments) : null;
                 };
 
                 // -----------------------------------------------------------
-                // 6. 核心功能：動態新增 Widget
+                // 5. 動態組件生成功能 (Factory Method)
                 // -----------------------------------------------------------
-                
                 this.addTagInputs = function (defaultFolder = null, defaultFile = null) {
-                    // 先移除底部的 "+ Add" 按鈕 (因為新 Widget 要插在它上面)
+                    // 確保新增按鈕始終位於組件列表的最末端
                     if (node.addTagButton) {
                         const idx = node.widgets.indexOf(node.addTagButton);
                         if (idx !== -1) node.widgets.splice(idx, 1);
                     }
 
                     const folderNames = Object.keys(node.tagsData);
-                    
-                    // 建立 Folder 下拉選單
-                    const folderWidget = node.addWidget(
-                        "combo",
-                        `Folder`, 
-                        defaultFolder || (folderNames.length > 0 ? folderNames[0] : ""),
-                        (v) => {
-                            updateFileWidget(v, fileWidget); 
-                            updateSettings(); 
-                        },
-                        { values: folderNames }
-                    );
+                    const folderWidget = node.addWidget("combo", "Folder", defaultFolder || (folderNames.length > 0 ? folderNames[0] : ""), (v) => {
+                        updateFileWidget(v, fileWidget); 
+                        updateSettings(); 
+                    }, { values: folderNames });
 
-                    // 建立 File 下拉選單
-                    const fileWidget = node.addWidget(
-                        "combo",
-                        `File`,
-                        defaultFile || "ALL",
-                        () => updateSettings(),
-                        { values: [] }
-                    );
-                    
-                    fileWidget.computeSize = () => [0, 35]; // 設定高度
-
-                    // 初始化選項
+                    const fileWidget = node.addWidget("combo", "File", defaultFile || "ALL", () => updateSettings(), { values: [] });
+                    fileWidget.computeSize = () => [0, 35];
                     updateFileWidget(folderWidget.value, fileWidget);
 
-                    // 記錄到動態陣列
-                    node.dynamicWidgets.push({
-                        type: "file",
-                        folder: folderWidget,
-                        file: fileWidget
-                    });
-
-                    // 還原預設值 (如果是讀檔恢復的情況)
+                    node.dynamicWidgets.push({ type: "file", folder: folderWidget, file: fileWidget });
                     if (defaultFile && fileWidget.options.values.includes(defaultFile)) {
                         fileWidget.value = defaultFile;
                     }
 
                     updateSettings();
-
-                    // 加回 "+ Add" 按鈕
-                    if (node.addTagButton) {
-                        node.widgets.push(node.addTagButton);
-                    }
-
-                    // 調整節點大小以適應新內容
+                    if (node.addTagButton) node.widgets.push(node.addTagButton);
                     node.setSize([node.size[0], node.computeSize()[1]]);
                 };
 
-                // -----------------------------------------------------------
-                // 7. 輔助功能：可搜尋的選單 (Searchable Menu)
-                // -----------------------------------------------------------
-                
+                /**
+                 * 建立具備即時過濾功能的搜尋選單
+                 */
                 const createSearchableMenu = (event, values, callback) => {
-                    const menu = new LiteGraph.ContextMenu(values, {
-                        event: event,
-                        callback: callback,
-                        scale: 1.3
-                    });
-
-                    // 建立搜尋框 DOM
+                    const menu = new LiteGraph.ContextMenu(values, { event: event, callback: callback, scale: 1.3 });
                     const searchInput = document.createElement("input");
                     searchInput.placeholder = "🔍 Search Folder...";
-                    searchInput.style.cssText = `
-                        width: 95%; 
-                        margin: 5px auto; 
-                        display: block; 
-                        box-sizing: border-box; 
-                        background: #222; 
-                        color: #fff; 
-                        border: 1px solid #555; 
-                        padding: 4px;
-                        border-radius: 4px;
-                    `;
-
-                    // 搜尋過濾邏輯：即時隱藏不符合的選項
+                    searchInput.style.cssText = `width: 95%; margin: 5px auto; display: block; background: #222; color: #fff; border: 1px solid #555; padding: 4px; border-radius: 4px;`;
+                    
+                    // 實現清單過濾邏輯
                     searchInput.addEventListener("input", (e) => {
                         const term = e.target.value.toLowerCase();
-                        const entries = menu.root.querySelectorAll(".litemenu-entry");
-                        
-                        entries.forEach(entry => {
+                        menu.root.querySelectorAll(".litemenu-entry").forEach(entry => {
                             const text = entry.innerText.toLowerCase();
-                            if (!text) return;
-                            
-                            if (text.includes(term)) {
-                                entry.style.display = "block";
-                            } else {
-                                entry.style.display = "none";
-                            }
+                            entry.style.display = (text && text.includes(term)) ? "block" : "none";
                         });
                     });
-
-                    // 阻擋事件冒泡，防止輸入時觸發 ComfyUI 快捷鍵
+                    
+                    // 阻止事件冒泡以免觸發 LiteGraph 預設行為
                     searchInput.addEventListener("mouseup", (e) => e.stopPropagation());
                     searchInput.addEventListener("keydown", (e) => e.stopPropagation());
-
                     menu.root.prepend(searchInput);
                     setTimeout(() => searchInput.focus(), 10);
                 };
 
                 // -----------------------------------------------------------
-                // 8. 建立新增按鈕與啟動載入
+                // 6. 初始化載入流程與非同步數據恢復
                 // -----------------------------------------------------------
-                
-                node.addTagButton = this.addWidget(
-                    "button",
-                    "+ Add Tag Group",
-                    null,
-                    function (value, canvas, node, pos, event) {
-                        const folderNames = Object.keys(node.tagsData).sort();
-                        
-                        if (folderNames.length === 0) {
-                            alert("No tags folder found!");
-                            return;
-                        }
+                node.addTagButton = this.addWidget("button", "+ Add Tag Group", null, function (value, canvas, node, pos, event) {
+                    const folderNames = Object.keys(node.tagsData).sort();
+                    if (folderNames.length === 0) return alert("No tags folder found!");
+                    createSearchableMenu(event, folderNames, (selectedFolder) => {
+                        if (selectedFolder) node.addTagInputs(selectedFolder, "ALL");
+                    });
+                });
 
-                        // 呼叫自定義搜尋選單
-                        createSearchableMenu(
-                            event, 
-                            folderNames, 
-                            (selectedFolder) => {
-                                if (selectedFolder) {
-                                    node.addTagInputs(selectedFolder, "ALL");
-                                }
-                            }
-                        );
-                    }
-                );
-
-                // 啟動時：從後端 API 獲取資料並還原上次的設定
+                // 從後端 API 獲取標籤結構並根據備份狀態恢復 UI
                 fetch("/custom_nodes/tags")
                     .then(response => response.json())
                     .then(data => {
                         node.tagsData = data;
-                        
-                        // 檢查是否有儲存的設定並還原
                         if (settingsWidget && settingsWidget.value && settingsWidget.value !== "{}") {
                             try {
                                 const savedData = JSON.parse(settingsWidget.value);
-                                Object.keys(savedData)
-                                    .sort((a, b) => parseInt(a) - parseInt(b)) // 確保順序正確
-                                    .forEach(key => {
-                                        const item = savedData[key];
-                                        if (item.folder) {
-                                            this.addTagInputs(item.folder, item.file);
-                                        }
-                                    });
+                                const keys = Object.keys(savedData).sort((a, b) => parseInt(a) - parseInt(b));
+                                
+                                keys.forEach(key => {
+                                    const item = savedData[key];
+                                    if (item.type === "file" && item.folder) {
+                                        this.addTagInputs(item.folder, item.file);
+                                    }
+                                });
+
+                                // 所有組件渲染完成後，執行雙重延遲校準以確保尺寸計算準確
+                                requestAnimationFrame(() => {
+                                    node.fixSize();
+                                    setTimeout(() => node.fixSize(), 100);
+                                });
+
                             } catch (e) {
                                 console.error("Error restoring tags:", e);
                             }
