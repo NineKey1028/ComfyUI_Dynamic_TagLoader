@@ -4,6 +4,7 @@ from .loader_node import DynamicTagLoaderJS
 from .saver_node import DynamicTagSaver
 from .iterator_node import DynamicTagIterator
 from .image_info_node import ImageWorkflowExtractor
+from .wait_for_node import WaitForNode
 
 # ==============================================================================
 # 模組導入與環境檢查
@@ -77,6 +78,7 @@ NODE_CLASS_MAPPINGS = {
     "DynamicTagSaver": DynamicTagSaver,
     "DynamicTagIterator": DynamicTagIterator,
     "WorkflowMetadataReader": ImageWorkflowExtractor,
+    "WaitForNode": WaitForNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -84,6 +86,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DynamicTagSaver": "💾 Dynamic Tag Saver",
     "DynamicTagIterator": "🔄 Dynamic Tag Iterator",
     "WorkflowMetadataReader": "🔍 Workflow Metadata Reader",
+    "WaitForNode": "⏳ Wait For",
 }
 
 WEB_DIRECTORY = "./web"
