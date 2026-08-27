@@ -201,21 +201,24 @@ app.registerExtension({
 
                     const initialLora = defaultLora || (node.loraList.length > 0 ? node.loraList[0] : "None");
 
+                    const uid = Math.random().toString(36).substring(2, 7);
                     const loraSelector = node.addWidget(
                         "combo",
-                        "LoRA Name",
+                        "LoRA Name_" + uid,
                         initialLora,
                         () => updateSettings(),
                         { values: node.loraList }
                     );
+                    loraSelector.label = "LoRA Name";
 
                     const strengthInput = node.addWidget(
                         "number",
-                        "Strength",
+                        "Strength_" + uid,
                         defaultStrength,
                         () => updateSettings(),
                         { min: -10.0, max: 10.0, step: 0.1, precision: 2 }
                     );
+                    strengthInput.label = "Strength";
                     
                     strengthInput.computeSize = () => [0, 30];
 

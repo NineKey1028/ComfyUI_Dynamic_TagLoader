@@ -196,12 +196,15 @@ app.registerExtension({
                     }
 
                     const folderNames = Object.keys(node.tagsData);
-                    const folderWidget = node.addWidget("combo", "Folder", defaultFolder || (folderNames.length > 0 ? folderNames[0] : ""), (v) => {
+                    const uid = Math.random().toString(36).substring(2, 7);
+                    const folderWidget = node.addWidget("combo", "Folder_" + uid, defaultFolder || (folderNames.length > 0 ? folderNames[0] : ""), (v) => {
                         updateFileWidget(v, fileWidget); 
                         updateSettings(); 
                     }, { values: folderNames });
+                    folderWidget.label = "Folder";
 
-                    const fileWidget = node.addWidget("combo", "File", defaultFile || "ALL", () => updateSettings(), { values: [] });
+                    const fileWidget = node.addWidget("combo", "File_" + uid, defaultFile || "ALL", () => updateSettings(), { values: [] });
+                    fileWidget.label = "File";
                     fileWidget.computeSize = () => [0, 35];
                     updateFileWidget(folderWidget.value, fileWidget);
 
