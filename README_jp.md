@@ -13,8 +13,6 @@
 
 ## チップ式プロンプト編集
 
-![Dynamic Tag Loader チップ式プロンプト編集例](./example/Dynamic_Tag_composer_example.png)
-
 ⚡ Dynamic Tag Loader のプロンプト編集欄で `@` を入力すると、tag `.txt` ファイルを検索して挿入できます。挿入したタグはチップとして表示され、通常のテキストと自由に混在できます。チップをクリックして `Ctrl + ↑ / ↓` を使うと、ComfyUI 標準のルールで強度を調整できます。Backspace、Delete、コピー、貼り付けによる編集にも対応しています。
 
 ## インストール
