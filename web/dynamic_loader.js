@@ -187,11 +187,14 @@ app.registerExtension({
                     if (!menu.hidden && !composer.contains(event.target) && !menu.contains(event.target)) closeMenu();
                 };
                 const closeMenuForCanvasChange = () => closeMenu();
+                const closeMenuForPageScroll = event => {
+                    if (event.target !== menu) closeMenu();
+                };
                 const canvasElement = app.canvas?.canvas;
                 document.addEventListener("pointerdown", closeMenuOutside, true);
                 window.addEventListener("blur", closeMenuForCanvasChange);
                 window.addEventListener("resize", closeMenuForCanvasChange);
-                window.addEventListener("scroll", closeMenuForCanvasChange, true);
+                window.addEventListener("scroll", closeMenuForPageScroll, true);
                 canvasElement?.addEventListener("wheel", closeMenuForCanvasChange, { passive: true });
                 const insertTagFromMenu = (entry) => {
                     const trigger = getTrigger();
@@ -732,7 +735,7 @@ app.registerExtension({
                     document.removeEventListener("pointerdown", closeMenuOutside, true);
                     window.removeEventListener("blur", closeMenuForCanvasChange);
                     window.removeEventListener("resize", closeMenuForCanvasChange);
-                    window.removeEventListener("scroll", closeMenuForCanvasChange, true);
+                    window.removeEventListener("scroll", closeMenuForPageScroll, true);
                     canvasElement?.removeEventListener("wheel", closeMenuForCanvasChange);
                     try { exTagCompleter?.destroy?.(); } catch { /* optional integration */ }
                     exTagCompleter = null;
