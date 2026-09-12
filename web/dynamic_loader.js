@@ -1019,14 +1019,11 @@ app.registerExtension({
                                     }
                                 });
 
-                                requestAnimationFrame(() => {
-                                    node.triggerAutoSize();
-                                });
-
                             } catch (e) {
                                 console.error("Error restoring tags:", e);
                             }
                         }
+                        requestAnimationFrame(() => node.triggerAutoSize());
                     });
 
                 return r;

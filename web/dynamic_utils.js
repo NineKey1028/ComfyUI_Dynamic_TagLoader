@@ -59,6 +59,9 @@ export function getDynamicGroupMenu(index, totalLength, moveCallback, moveAbsCal
  * 2. 防止新增項目時擠壓現有組件 (Growth Logic)
  */
 export function setupSizeManager(node) {
+    const MAX_RESTORED_EXTRA_HEIGHT = 480;
+    const MAX_RESTORED_HEIGHT = 900;
+    const initialMinHeight = node.computeSize?.()[1] || 0;
     node._userMinHeight = 0;
     node._isResizing = false;
 
@@ -67,7 +70,15 @@ export function setupSizeManager(node) {
     node.onConfigure = function(data) {
         if (originalOnConfigure) originalOnConfigure.apply(this, arguments);
         if (data && data.size) {
-            node._userMinHeight = data.size[1];
+            const restoredHeight = data.size[1];
+            const runawayHeight = restoredHeight > MAX_RESTORED_HEIGHT
+                && restoredHeight > initialMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
+            node._userMinHeight = runawayHeight ? 0 : restoredHeight;
+            if (runawayHeight) {
+                node._isResizing = true;
+                node.setSize([node.size[0], initialMinHeight]);
+                node._isResizing = false;
+            }
         }
     };
 
@@ -133,7 +144,13 @@ export function setupSizeManager(node) {
      */
     node.triggerAutoSize = function() {
         const contentMinHeight = node.computeSize()[1];
-        const targetHeight = Math.max(contentMinHeight, node._userMinHeight || 0);
+        const restoredHeight = node._userMinHeight || 0;
+        const runawayHeight = restoredHeight > MAX_RESTORED_HEIGHT
+            && restoredHeight > contentMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
+        const targetHeight = runawayHeight
+            ? contentMinHeight
+            : Math.max(contentMinHeight, restoredHeight);
+        if (runawayHeight) node._userMinHeight = targetHeight;
         
         node._isResizing = true;
         node.setSize([node.size[0], targetHeight]);
