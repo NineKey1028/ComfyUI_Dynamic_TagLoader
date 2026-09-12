@@ -59,32 +59,15 @@ export function getDynamicGroupMenu(index, totalLength, moveCallback, moveAbsCal
  * 2. 防止新增項目時擠壓現有組件 (Growth Logic)
  */
 export function setupSizeManager(node) {
-    const MAX_RESTORED_EXTRA_HEIGHT = 480;
-    const MAX_RESTORED_HEIGHT = 900;
-    const initialMinHeight = node.computeSize?.()[1] || 0;
     node._userMinHeight = 0;
     node._isResizing = false;
-    const isRunawayHeight = height => height > MAX_RESTORED_HEIGHT
-        && height > initialMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
-    node._healRunawayHeight = function() {
-        const height = node.size?.[1] || 0;
-        if (node._isResizing || !isRunawayHeight(height)) return false;
-        node._isResizing = true;
-        node._userMinHeight = 0;
-        node.setSize([node.size[0], initialMinHeight]);
-        node._isResizing = false;
-        node.setDirtyCanvas(true, true);
-        return true;
-    };
 
     // 1. 攔截讀取工作流配置
     const originalOnConfigure = node.onConfigure;
     node.onConfigure = function(data) {
         if (originalOnConfigure) originalOnConfigure.apply(this, arguments);
         if (data && data.size) {
-            const restoredHeight = data.size[1];
-            node._userMinHeight = restoredHeight;
-            node._healRunawayHeight();
+            node._userMinHeight = data.size[1];
         }
     };
 
@@ -94,7 +77,6 @@ export function setupSizeManager(node) {
         if (originalOnResize) originalOnResize.apply(this, arguments);
         if (!node._isResizing) {
             node._userMinHeight = size[1];
-            node._healRunawayHeight();
         }
     };
 
@@ -151,13 +133,7 @@ export function setupSizeManager(node) {
      */
     node.triggerAutoSize = function() {
         const contentMinHeight = node.computeSize()[1];
-        const restoredHeight = node._userMinHeight || 0;
-        const runawayHeight = restoredHeight > MAX_RESTORED_HEIGHT
-            && restoredHeight > contentMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
-        const targetHeight = runawayHeight
-            ? contentMinHeight
-            : Math.max(contentMinHeight, restoredHeight);
-        if (runawayHeight) node._userMinHeight = targetHeight;
+        const targetHeight = Math.max(contentMinHeight, node._userMinHeight || 0);
         
         node._isResizing = true;
         node.setSize([node.size[0], targetHeight]);

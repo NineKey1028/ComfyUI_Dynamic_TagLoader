@@ -6,6 +6,7 @@ function ensureComposerStyles() {
     const style = document.createElement("style");
     style.id = "dynamic-tag-composer-style";
     style.textContent = `
+        .dynamic-tag-storage-widget { display: none !important; }
         .dynamic-tag-composer-host { position: relative; box-sizing: border-box; width: 100%; height: 100%; min-height: 96px; }
         .dynamic-tag-composer { position: relative; z-index: 1; box-sizing: border-box; width: 100%; height: 100%; min-height: 96px; padding: 7px; overflow: auto;
             color: #e8e8e8; background: #171725; border: 1px solid #3b3b5b; border-radius: 5px;
@@ -42,6 +43,10 @@ app.registerExtension({
                 const settingsWidget = node.widgets.find(w => w.name === "tag_settings");
                 if (settingsWidget) {
                     settingsWidget.type = "hidden";
+                    settingsWidget.hidden = true;
+                    settingsWidget.options ??= {};
+                    settingsWidget.options.hidden = true;
+                    settingsWidget.element?.classList.add("dynamic-tag-storage-widget");
                     settingsWidget.computeSize = () => [0, -4]; 
                 }
                 const textInputWidget = node.widgets.find(w => w.name === "text_input");
@@ -49,6 +54,10 @@ app.registerExtension({
                 for (const widget of [textInputWidget, inlinePromptWidget]) {
                     if (widget) {
                         widget.type = "hidden";
+                        widget.hidden = true;
+                        widget.options ??= {};
+                        widget.options.hidden = true;
+                        widget.element?.classList.add("dynamic-tag-storage-widget");
                         widget.computeSize = () => [0, -4];
                     }
                 }
@@ -727,24 +736,9 @@ app.registerExtension({
                 const originalOnRemoved = node.onRemoved;
                 const originalWidgetOnRemove = composerWidget.onRemove;
                 let composerDisposed = false;
-                const healComposerHeight = () => {
-                    if (!composerDisposed) node._healRunawayHeight?.();
-                };
-                const composerResizeObserver = new ResizeObserver(healComposerHeight);
-                composerResizeObserver.observe(composerHost);
-                const originalOnSelected = node.onSelected;
-                node.onSelected = function() {
-                    const result = originalOnSelected?.apply(this, arguments);
-                    requestAnimationFrame(healComposerHeight);
-                    return result;
-                };
-                requestAnimationFrame(healComposerHeight);
-                setTimeout(healComposerHeight, 0);
-                setTimeout(healComposerHeight, 250);
                 const disposeComposer = () => {
                     if (composerDisposed) return;
                     composerDisposed = true;
-                    composerResizeObserver.disconnect();
                     closeMenu();
                     menu.remove();
                     document.removeEventListener("pointerdown", closeMenuOutside, true);
