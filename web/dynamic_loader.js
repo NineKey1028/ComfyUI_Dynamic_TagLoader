@@ -651,10 +651,14 @@ app.registerExtension({
                     setTimeout(patchGraphPaste, 0);
                 }
 
-                // DOM widgets sit above the LiteGraph canvas and therefore
-                // absorb its wheel event. Forward it so canvas zoom remains
-                // available even while the insertion caret is in this editor.
+                // Keep normal editor scrolling when the prompt overflows. For
+                // short prompts, pass the wheel through to the canvas so its
+                // zoom shortcut remains available while typing.
                 composer.addEventListener("wheel", event => {
+                    if (composer.scrollHeight > composer.clientHeight + 1) {
+                        event.stopPropagation();
+                        return;
+                    }
                     const canvas = app.canvas?.canvas;
                     if (!canvas) return;
                     event.preventDefault();
