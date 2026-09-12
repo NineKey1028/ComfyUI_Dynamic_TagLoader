@@ -64,6 +64,18 @@ export function setupSizeManager(node) {
     const initialMinHeight = node.computeSize?.()[1] || 0;
     node._userMinHeight = 0;
     node._isResizing = false;
+    const isRunawayHeight = height => height > MAX_RESTORED_HEIGHT
+        && height > initialMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
+    node._healRunawayHeight = function() {
+        const height = node.size?.[1] || 0;
+        if (node._isResizing || !isRunawayHeight(height)) return false;
+        node._isResizing = true;
+        node._userMinHeight = 0;
+        node.setSize([node.size[0], initialMinHeight]);
+        node._isResizing = false;
+        node.setDirtyCanvas(true, true);
+        return true;
+    };
 
     // 1. 攔截讀取工作流配置
     const originalOnConfigure = node.onConfigure;
@@ -71,14 +83,8 @@ export function setupSizeManager(node) {
         if (originalOnConfigure) originalOnConfigure.apply(this, arguments);
         if (data && data.size) {
             const restoredHeight = data.size[1];
-            const runawayHeight = restoredHeight > MAX_RESTORED_HEIGHT
-                && restoredHeight > initialMinHeight + MAX_RESTORED_EXTRA_HEIGHT;
-            node._userMinHeight = runawayHeight ? 0 : restoredHeight;
-            if (runawayHeight) {
-                node._isResizing = true;
-                node.setSize([node.size[0], initialMinHeight]);
-                node._isResizing = false;
-            }
+            node._userMinHeight = restoredHeight;
+            node._healRunawayHeight();
         }
     };
 
@@ -88,6 +94,7 @@ export function setupSizeManager(node) {
         if (originalOnResize) originalOnResize.apply(this, arguments);
         if (!node._isResizing) {
             node._userMinHeight = size[1];
+            node._healRunawayHeight();
         }
     };
 

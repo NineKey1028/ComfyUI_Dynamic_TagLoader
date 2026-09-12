@@ -727,9 +727,24 @@ app.registerExtension({
                 const originalOnRemoved = node.onRemoved;
                 const originalWidgetOnRemove = composerWidget.onRemove;
                 let composerDisposed = false;
+                const healComposerHeight = () => {
+                    if (!composerDisposed) node._healRunawayHeight?.();
+                };
+                const composerResizeObserver = new ResizeObserver(healComposerHeight);
+                composerResizeObserver.observe(composerHost);
+                const originalOnSelected = node.onSelected;
+                node.onSelected = function() {
+                    const result = originalOnSelected?.apply(this, arguments);
+                    requestAnimationFrame(healComposerHeight);
+                    return result;
+                };
+                requestAnimationFrame(healComposerHeight);
+                setTimeout(healComposerHeight, 0);
+                setTimeout(healComposerHeight, 250);
                 const disposeComposer = () => {
                     if (composerDisposed) return;
                     composerDisposed = true;
+                    composerResizeObserver.disconnect();
                     closeMenu();
                     menu.remove();
                     document.removeEventListener("pointerdown", closeMenuOutside, true);
