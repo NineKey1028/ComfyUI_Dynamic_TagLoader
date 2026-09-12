@@ -183,6 +183,16 @@ app.registerExtension({
                 let menuEntries = [];
                 let menuIndex = 0;
                 const closeMenu = () => { menu.hidden = true; menu.replaceChildren(); };
+                const closeMenuOutside = event => {
+                    if (!menu.hidden && !composer.contains(event.target) && !menu.contains(event.target)) closeMenu();
+                };
+                const closeMenuForCanvasChange = () => closeMenu();
+                const canvasElement = app.canvas?.canvas;
+                document.addEventListener("pointerdown", closeMenuOutside, true);
+                window.addEventListener("blur", closeMenuForCanvasChange);
+                window.addEventListener("resize", closeMenuForCanvasChange);
+                window.addEventListener("scroll", closeMenuForCanvasChange, true);
+                canvasElement?.addEventListener("wheel", closeMenuForCanvasChange, { passive: true });
                 const insertTagFromMenu = (entry) => {
                     const trigger = getTrigger();
                     if (!trigger) return closeMenu();
@@ -447,6 +457,7 @@ app.registerExtension({
                         node.inlineComposerSelectedChip?.classList.remove("selected");
                         node.inlineComposerSelectedChip = null;
                     }
+                    if (!getTrigger()) closeMenu();
                 });
                 // LiteGraph assigns single-letter shortcuts (including F) to
                 // the canvas. A contenteditable element is not treated like a
@@ -718,6 +729,11 @@ app.registerExtension({
                     composerDisposed = true;
                     closeMenu();
                     menu.remove();
+                    document.removeEventListener("pointerdown", closeMenuOutside, true);
+                    window.removeEventListener("blur", closeMenuForCanvasChange);
+                    window.removeEventListener("resize", closeMenuForCanvasChange);
+                    window.removeEventListener("scroll", closeMenuForCanvasChange, true);
+                    canvasElement?.removeEventListener("wheel", closeMenuForCanvasChange);
                     try { exTagCompleter?.destroy?.(); } catch { /* optional integration */ }
                     exTagCompleter = null;
                     delete composer.__dynamicTagClipboard;
