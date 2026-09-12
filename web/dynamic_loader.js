@@ -246,6 +246,31 @@ app.registerExtension({
                     return sibling.classList.contains("dynamic-tag-chip") ? sibling : null;
                 };
 
+                const moveFromSelectedChip = (direction) => {
+                    const chip = node.inlineComposerSelectedChip;
+                    if (!chip) return false;
+                    const rect = chip.getBoundingClientRect();
+                    const lineHeight = Number.parseFloat(getComputedStyle(composer).lineHeight) || rect.height;
+                    const pointY = direction < 0 ? rect.top - lineHeight / 2 : rect.bottom + lineHeight / 2;
+                    const pointX = rect.left + Math.min(rect.width / 2, 8);
+                    const caret = document.caretPositionFromPoint?.(pointX, pointY);
+                    const range = caret
+                        ? (() => {
+                            const next = document.createRange();
+                            next.setStart(caret.offsetNode, caret.offset);
+                            next.collapse(true);
+                            return next;
+                        })()
+                        : document.caretRangeFromPoint?.(pointX, pointY);
+                    if (!range || !composer.contains(range.startContainer)) return false;
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    chip.classList.remove("selected");
+                    node.inlineComposerSelectedChip = null;
+                    return true;
+                };
+
                 const editAttentionWithNativeRules = (direction) => {
                     const selection = window.getSelection();
                     const native = window.comfyAPI?.editAttention;
@@ -465,6 +490,11 @@ app.registerExtension({
                             bubbles: true,
                             cancelable: true,
                         }));
+                        return;
+                    }
+                    if ((event.key === "ArrowUp" || event.key === "ArrowDown")
+                        && moveFromSelectedChip(event.key === "ArrowUp" ? -1 : 1)) {
+                        event.preventDefault();
                         return;
                     }
                     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
