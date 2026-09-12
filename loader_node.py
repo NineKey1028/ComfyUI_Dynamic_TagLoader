@@ -27,6 +27,9 @@ class DynamicTagLoaderJS:
             "required": {
                 "text_input": ("STRING", {"default": "", "multiline": True, "placeholder": "Global Prompt (Prepend to all)..."}),
                 "tag_settings": ("STRING", {"default": "{}", "multiline": False}),
+                # The visual prompt composer stores ordered text/tag segments here.
+                # text_input remains as a fallback for workflows created before the composer.
+                "inline_prompt": ("STRING", {"default": "[]", "multiline": False}),
             },
             "optional": {
                 "model": ("MODEL",),
@@ -124,7 +127,72 @@ class DynamicTagLoaderJS:
         except:
             return None
 
-    def process(self, text_input, tag_settings, model=None, clip=None, **kwargs):
+    def _parse_inline_prompt(self, inline_prompt):
+        """Expand the ordered segments produced by the @ prompt composer.
+
+        A tag segment references one tag file and may carry a prompt/LoRA
+        strength.  The file is deliberately resolved at execution time so a
+        workflow always uses the current contents of its tag library.
+        """
+        try:
+            segments = json.loads(inline_prompt)
+        except (TypeError, json.JSONDecodeError):
+            return None
+
+        if not isinstance(segments, list) or not segments:
+            return None
+
+        text_parts = []
+        loras = []
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+
+            if segment.get("type") == "text":
+                text_parts.append(str(segment.get("text", "")))
+                continue
+
+            if segment.get("type") != "tag":
+                continue
+
+            folder_name = segment.get("folder")
+            file_name = segment.get("file")
+            if not isinstance(folder_name, str) or not isinstance(file_name, str):
+                continue
+            # @ references intentionally resolve one file only; ALL remains a
+            # Tag Group feature because it produces a batch dimension.
+            if file_name == "ALL" or not file_name.endswith(".txt"):
+                continue
+
+            folder_path = TAGS_DIR if folder_name == "Root" else os.path.join(TAGS_DIR, os.path.normpath(folder_name))
+            try:
+                if os.path.commonpath([TAGS_DIR, folder_path]) != TAGS_DIR:
+                    continue
+            except ValueError:
+                continue
+
+            raw_content = self._read_file(os.path.join(folder_path, file_name))
+            if raw_content is None:
+                print(f"[DynamicTagLoader] Warning: Inline tag not found: {folder_name}/{file_name}")
+                continue
+
+            clean_text, tag_loras = self._parse_and_strip_lora(raw_content)
+            try:
+                strength = float(segment.get("strength", 1.0))
+            except (TypeError, ValueError):
+                strength = 1.0
+            strength = max(0.0, min(3.0, strength))
+
+            # Prompt weighting and LoRA weighting follow the same chip value.
+            # At 1.0 the original tag text stays untouched for compatibility.
+            if clean_text and strength != 1.0:
+                clean_text = f"({clean_text}:{strength:.1f})"
+            text_parts.append(clean_text)
+            loras.extend((name, weight * strength) for name, weight in tag_loras)
+
+        return "".join(text_parts), loras
+
+    def process(self, text_input, tag_settings="{}", inline_prompt="[]", model=None, clip=None, **kwargs):
         """
         主要處理工作流：
         1. 解析 tag_settings JSON 設定，按索引排序。
@@ -138,8 +206,13 @@ class DynamicTagLoaderJS:
         except Exception as e:
             settings = {}
 
-        # 預處理全域輸入 (Global Prompt)
-        base_text_cleaned, base_loras = self._parse_and_strip_lora(text_input)
+        # Prefer the ordered @ composer data when present, falling back to the
+        # legacy Global Prompt field for older workflows.
+        parsed_inline = self._parse_inline_prompt(inline_prompt)
+        if parsed_inline is None:
+            base_text_cleaned, base_loras = self._parse_and_strip_lora(text_input)
+        else:
+            base_text_cleaned, base_loras = parsed_inline
         prompts_groups = []
         
         # 根據前端 UI 設定的索引順序進行數據構造

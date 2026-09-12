@@ -12,6 +12,12 @@
 <img width="1465" height="849" alt="ComfyUI_Dynamic_TagLoader_01" src="https://github.com/user-attachments/assets/517a9b69-e150-4ef6-aec1-b0ffcae43ab7" />
 
 
+## Chip-based Prompt Editing
+
+![Dynamic Tag Loader chip-based prompt editing example](./example/Dynamic_Tag_composer_example.png)
+
+Type `@` in the ⚡ Dynamic Tag Loader prompt editor to search for and insert tag `.txt` files. Inserted tags appear as chips and can be freely mixed with normal text. Click a chip and use `Ctrl + ↑ / ↓` to adjust its strength with ComfyUI's native rules; Backspace, Delete, copy, and paste are supported for quick editing.
+
 ## Installation
 
 Navigate to your ComfyUI `custom_nodes` directory:

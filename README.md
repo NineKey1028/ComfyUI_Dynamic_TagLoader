@@ -11,6 +11,12 @@
 
 <img width="1465" height="849" alt="ComfyUI_Dynamic_TagLoader_01" src="https://github.com/user-attachments/assets/517a9b69-e150-4ef6-aec1-b0ffcae43ab7" />
 
+## 方塊式 Prompt 編輯
+
+![Dynamic Tag Loader 方塊式 Prompt 編輯範例](./example/Dynamic_Tag_composer_example.png)
+
+在 ⚡ Dynamic Tag Loader 的 Prompt 編輯區輸入 `@`，即可搜尋並插入 tag `.txt` 檔。插入後會以方塊顯示，可與一般文字自由混排；點選方塊後可用 `Ctrl + ↑ / ↓` 依 ComfyUI 原生規則調整強度，並可用 Backspace、Delete、複製與貼上快速編輯。
+
 ## 安裝說明 (Installation)
 
 進入 ComfyUI custom_nodes 目錄：
