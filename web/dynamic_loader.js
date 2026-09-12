@@ -193,6 +193,13 @@ app.registerExtension({
                 let menuIndex = 0;
                 const closeMenu = () => { menu.hidden = true; menu.replaceChildren(); };
                 const closeMenuOutside = event => {
+                    if (exTagCompleter?.dropdownController?.dropdown.contains(event.target)) return;
+                    if (!composer.contains(event.target) && !menu.contains(event.target)) {
+                        exTagCompleter?.dropdownController?.hide();
+                        if (document.activeElement === composer || document.activeElement === exTagProxy) {
+                            document.activeElement.blur();
+                        }
+                    }
                     if (!menu.hidden && !composer.contains(event.target) && !menu.contains(event.target)) closeMenu();
                 };
                 const closeMenuForCanvasChange = () => closeMenu();
@@ -367,6 +374,12 @@ app.registerExtension({
                 };
 
                 let exTagCompleter = null;
+                let completionDismissed = false;
+                const dismissCompletion = () => {
+                    completionDismissed = true;
+                    exTagCompleter?.dropdownController?.hide();
+                    closeMenu();
+                };
                 let exTagProxyValue = "";
                 let syncingExTagProxy = false;
                 const textOffsetAt = (container, offset) => {
@@ -420,6 +433,7 @@ app.registerExtension({
                     exTagProxy.value = exTagProxyValue;
                     exTagProxy.setSelectionRange(offsets.start, offsets.end);
                     if (!emitInput) return;
+                    completionDismissed = false;
                     syncingExTagProxy = true;
                     exTagProxy.dispatchEvent(new Event("input", { bubbles: true }));
                     syncingExTagProxy = false;
@@ -455,6 +469,33 @@ app.registerExtension({
                         // has already removed this node.
                         if (composerDisposed) return;
                         exTagCompleter = new TagCompleter(exTagProxy);
+                        const dropdown = exTagCompleter.dropdownController;
+                        const originalShow = dropdown.show;
+                        dropdown.show = function(...args) {
+                            // A debounced search may finish after the user has
+                            // moved to another node.
+                            if (composerDisposed || completionDismissed || document.activeElement !== composer || !menu.hidden) return;
+                            const selection = window.getSelection();
+                            if (!selection?.rangeCount || !composer.contains(selection.focusNode)) return;
+                            const caretRange = document.createRange();
+                            caretRange.setStart(selection.focusNode, selection.focusOffset);
+                            caretRange.collapse(true);
+                            let rect = caretRange.getClientRects()[0];
+                            if (!rect?.height && selection.focusNode.nodeType === Node.TEXT_NODE
+                                && selection.focusOffset > 0) {
+                                caretRange.setStart(selection.focusNode, selection.focusOffset - 1);
+                                const previous = caretRange.getBoundingClientRect();
+                                rect = { left: previous.right, bottom: previous.bottom, height: previous.height };
+                            }
+                            if (!rect?.height) return;
+                            originalShow.apply(this, args);
+                            const top = rect.bottom + 4;
+                            const available = Math.max(0, window.innerHeight - top - 8);
+                            this.viewport.style.height = "";
+                            this.viewport.style.maxHeight = `${Math.min(this.calculateViewportHeight(), Math.max(0, available - 16))}px`;
+                            this.dropdown.style.top = `${top}px`;
+                            this.dropdown.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - this.dropdown.offsetWidth - 4))}px`;
+                        };
                     })
                     // ExTagComplete is optional; this node remains usable when
                     // the extension is not installed or uses a different URL.
@@ -464,6 +505,11 @@ app.registerExtension({
                     serializeComposer();
                     if (!showMenu()) syncExTagProxy();
                 });
+                composer.addEventListener("blur", event => {
+                    if (exTagCompleter?.dropdownController?.dropdown.contains(event.relatedTarget)) return;
+                    dismissCompletion();
+                });
+                composer.addEventListener("pointerdown", dismissCompletion);
                 composer.addEventListener("click", event => {
                     if (event.target === composer) {
                         node.inlineComposerSelectedChip?.classList.remove("selected");
@@ -486,12 +532,14 @@ app.registerExtension({
                     // bubbling to ComfyUI's native command handler.
                     if (!event.ctrlKey && !event.metaKey && !event.altKey) event.stopPropagation();
                     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+                        dismissCompletion();
                         // Preserve the browser's native Select All inside the
                         // editor without letting LiteGraph select graph nodes.
                         event.stopPropagation();
                         return;
                     }
                     if ((event.ctrlKey || event.metaKey) && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+                        dismissCompletion();
                         if (editAttentionWithNativeRules(event.key === "ArrowUp" ? 1 : -1)) {
                             event.preventDefault();
                             event.stopImmediatePropagation();
@@ -514,6 +562,11 @@ app.registerExtension({
                             cancelable: true,
                         }));
                         return;
+                    }
+                    // Candidate navigation above returns before caret movement
+                    // dismisses the list. A new input enables completion again.
+                    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
+                        dismissCompletion();
                     }
                     if ((event.key === "ArrowUp" || event.key === "ArrowDown")
                         && moveFromSelectedChip(event.key === "ArrowUp" ? -1 : 1)) {
@@ -633,12 +686,14 @@ app.registerExtension({
                 if (!document.__dynamicTagClipboardGuardInstalled) {
                     document.__dynamicTagClipboardGuardInstalled = true;
                     const activeComposer = () => {
-                        const focused = document.activeElement?.closest?.('.dynamic-tag-composer');
-                        if (focused) return focused;
-                        const anchor = window.getSelection()?.anchorNode;
-                        return (anchor?.nodeType === Node.ELEMENT_NODE ? anchor : anchor?.parentElement)
-                            ?.closest?.('.dynamic-tag-composer');
+                        return document.activeElement?.closest?.('.dynamic-tag-composer');
                     };
+                    window.addEventListener("keydown", event => {
+                        if (activeComposer() && (event.ctrlKey || event.metaKey)
+                            && !event.altKey && event.key.toLowerCase() === "f") {
+                            event.stopImmediatePropagation();
+                        }
+                    }, true);
                     window.addEventListener("copy", event => {
                         const active = activeComposer();
                         if (!active?.__dynamicTagClipboard || !event.clipboardData) return;
