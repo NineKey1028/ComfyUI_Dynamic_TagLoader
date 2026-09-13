@@ -319,22 +319,80 @@ app.registerExtension({
                     return true;
                 };
 
+                function composerTextFrom(root) {
+                    let text = "";
+                    const walk = node => {
+                        for (const child of node.childNodes) {
+                            if (child.nodeType === Node.TEXT_NODE) text += child.nodeValue;
+                            else if (child.nodeName === "BR") text += "\n";
+                            else walk(child);
+                        }
+                    };
+                    walk(root);
+                    return text;
+                }
+                function composerText() {
+                    return composerTextFrom(composer);
+                }
+                function textOffsetAt(container, offset) {
+                    const range = document.createRange();
+                    range.selectNodeContents(composer);
+                    range.setEnd(container, offset);
+                    return composerTextFrom(range.cloneContents()).length;
+                }
+                function textOffsetBefore(node) {
+                    const range = document.createRange();
+                    range.selectNodeContents(composer);
+                    range.setEndBefore(node);
+                    return composerTextFrom(range.cloneContents()).length;
+                }
+                function rangeAtComposerTextOffset(offset) {
+                    const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+                        acceptNode(node) {
+                            return node.nodeType === Node.TEXT_NODE || node.nodeName === "BR"
+                                ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+                        },
+                    });
+                    let remaining = Math.max(0, offset);
+                    let current;
+                    while ((current = walker.nextNode())) {
+                        if (current.nodeType === Node.TEXT_NODE) {
+                            const length = current.nodeValue.length;
+                            if (remaining <= length) {
+                                const range = document.createRange();
+                                const chip = current.parentElement?.closest(".dynamic-tag-chip");
+                                if (chip && remaining === 0) range.setStartBefore(chip);
+                                else if (chip && remaining === length) range.setStartAfter(chip);
+                                else range.setStart(current, remaining);
+                                range.collapse(true);
+                                return range;
+                            }
+                            remaining -= length;
+                        } else if (remaining <= 1) {
+                            const range = document.createRange();
+                            if (remaining === 0) range.setStartBefore(current);
+                            else range.setStartAfter(current);
+                            range.collapse(true);
+                            return range;
+                        } else remaining--;
+                    }
+                    const range = document.createRange();
+                    range.selectNodeContents(composer);
+                    range.collapse(false);
+                    return range;
+                }
+
                 const editAttentionWithNativeRules = (direction) => {
                     const selection = window.getSelection();
                     const native = window.comfyAPI?.editAttention;
                     if (!native || !selection?.rangeCount || !composer.contains(selection.anchorNode)) return false;
                     const selected = selection.getRangeAt(0);
-                    const prefix = selected.cloneRange();
-                    prefix.selectNodeContents(composer);
-                    prefix.setEnd(selected.startContainer, selected.startOffset);
-                    let start = prefix.toString().length;
-                    let end = start + selected.toString().length;
-                    const value = composer.textContent;
+                    let start = textOffsetAt(selected.startContainer, selected.startOffset);
+                    let end = textOffsetAt(selected.endContainer, selected.endOffset);
+                    const value = composerText();
                     const chip = node.inlineComposerSelectedChip;
                     if (chip && selection.isCollapsed) {
-                        prefix.selectNodeContents(composer);
-                        prefix.setEndBefore(chip);
-                        start = prefix.toString().length;
+                        start = textOffsetBefore(chip);
                         end = start + chip.textContent.length;
 
                         // Parentheses and weights are ordinary editable text.
@@ -401,12 +459,6 @@ app.registerExtension({
                 };
                 let exTagProxyValue = "";
                 let syncingExTagProxy = false;
-                const textOffsetAt = (container, offset) => {
-                    const range = document.createRange();
-                    range.selectNodeContents(composer);
-                    range.setEnd(container, offset);
-                    return range.toString().length;
-                };
                 const composerSelectionOffsets = () => {
                     const selection = window.getSelection();
                     if (!selection?.rangeCount || !composer.contains(selection.anchorNode)) return null;
@@ -415,40 +467,15 @@ app.registerExtension({
                     let end = textOffsetAt(range.endContainer, range.endOffset);
                     const chip = node.inlineComposerSelectedChip;
                     if (chip && selection.isCollapsed) {
-                        const before = document.createRange();
-                        before.selectNodeContents(composer);
-                        before.setEndBefore(chip);
-                        start = before.toString().length;
+                        start = textOffsetBefore(chip);
                         end = start + chip.textContent.length;
                     }
                     return { start, end };
                 };
-                const rangeAtComposerTextOffset = (offset) => {
-                    const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT);
-                    let textNode;
-                    let remaining = Math.max(0, offset);
-                    while ((textNode = walker.nextNode())) {
-                        const length = textNode.nodeValue.length;
-                        if (remaining <= length) {
-                            const range = document.createRange();
-                            const chip = textNode.parentElement?.closest('.dynamic-tag-chip');
-                            if (chip && remaining === 0) range.setStartBefore(chip);
-                            else if (chip && remaining === length) range.setStartAfter(chip);
-                            else range.setStart(textNode, remaining);
-                            range.collapse(true);
-                            return range;
-                        }
-                        remaining -= length;
-                    }
-                    const range = document.createRange();
-                    range.selectNodeContents(composer);
-                    range.collapse(false);
-                    return range;
-                };
                 const syncExTagProxy = (emitInput = true) => {
                     const offsets = composerSelectionOffsets();
                     if (!offsets) return;
-                    exTagProxyValue = composer.textContent;
+                    exTagProxyValue = composerText();
                     exTagProxy.value = exTagProxyValue;
                     exTagProxy.setSelectionRange(offsets.start, offsets.end);
                     if (!emitInput) return;
