@@ -310,24 +310,11 @@ app.registerExtension({
                     } else if (container === composer) {
                         sibling = composer.childNodes[selection.focusOffset + (direction < 0 ? -1 : 0)];
                     }
+                    while (sibling?.nodeType === Node.TEXT_NODE && !withoutCaretAnchors(sibling.nodeValue)) {
+                        sibling = direction < 0 ? sibling.previousSibling : sibling.nextSibling;
+                    }
                     if (sibling?.nodeType !== Node.ELEMENT_NODE) return null;
                     return sibling.classList.contains("dynamic-tag-chip") ? sibling : null;
-                };
-
-                const moveAcrossAdjacentChip = (direction) => {
-                    const selected = node.inlineComposerSelectedChip;
-                    const chip = selected || adjacentChip(direction);
-                    if (!chip) return false;
-                    const range = document.createRange();
-                    if (direction < 0) range.setStartBefore(chip);
-                    else range.setStartAfter(chip);
-                    range.collapse(true);
-                    const selection = window.getSelection();
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                    selected?.classList.remove("selected");
-                    node.inlineComposerSelectedChip = null;
-                    return true;
                 };
 
                 const caretTextFrom = root => {
@@ -388,13 +375,46 @@ app.registerExtension({
                     return range;
                 };
 
-                const moveCaretVertically = direction => {
-                    const selection = window.getSelection();
-                    if (!selection?.rangeCount || !selection.isCollapsed || !composer.contains(selection.anchorNode)) return false;
+                const currentCaretOffset = selection => {
                     const before = selection.getRangeAt(0).cloneRange();
                     before.selectNodeContents(composer);
                     before.setEnd(selection.anchorNode, selection.anchorOffset);
-                    const offset = caretTextFrom(before.cloneContents()).length;
+                    return caretTextFrom(before.cloneContents()).length;
+                };
+
+                const moveCaretHorizontally = direction => {
+                    const selection = window.getSelection();
+                    if (!selection?.rangeCount || !selection.isCollapsed || !composer.contains(selection.anchorNode)) return false;
+                    const focus = selection.anchorNode;
+                    const isAnchor = current => current?.nodeType === Node.TEXT_NODE
+                        && current.nodeValue.includes(CARET_ANCHOR);
+                    let nearChip = Boolean(node.inlineComposerSelectedChip) || isAnchor(focus);
+                    if (focus === composer) {
+                        nearChip ||= [focus.childNodes[selection.anchorOffset - 1], focus.childNodes[selection.anchorOffset]]
+                            .some(current => isAnchor(current) || current?.classList?.contains("dynamic-tag-chip"));
+                    } else if (focus?.nodeType === Node.TEXT_NODE) {
+                        if (selection.anchorOffset === 0) nearChip ||= isAnchor(focus.previousSibling)
+                            || focus.previousSibling?.classList?.contains("dynamic-tag-chip");
+                        if (selection.anchorOffset === focus.nodeValue.length) nearChip ||= isAnchor(focus.nextSibling)
+                            || focus.nextSibling?.classList?.contains("dynamic-tag-chip");
+                    }
+                    if (!nearChip) return false;
+                    const offset = currentCaretOffset(selection);
+                    const target = offset + direction;
+                    const length = caretTextFrom(composer).length;
+                    if (target < 0 || target > length) return false;
+                    const range = rangeAtCaretOffset(target);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    node.inlineComposerSelectedChip?.classList.remove("selected");
+                    node.inlineComposerSelectedChip = null;
+                    return true;
+                };
+
+                const moveCaretVertically = direction => {
+                    const selection = window.getSelection();
+                    if (!selection?.rangeCount || !selection.isCollapsed || !composer.contains(selection.anchorNode)) return false;
+                    const offset = currentCaretOffset(selection);
                     const lines = caretTextFrom(composer).split("\n");
                     let line = 0;
                     let lineStart = 0;
@@ -755,7 +775,7 @@ app.registerExtension({
                     }
                     if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey
                         && (event.key === "ArrowLeft" || event.key === "ArrowRight")
-                        && moveAcrossAdjacentChip(event.key === "ArrowLeft" ? -1 : 1)) {
+                        && moveCaretHorizontally(event.key === "ArrowLeft" ? -1 : 1)) {
                         event.preventDefault();
                         return;
                     }
