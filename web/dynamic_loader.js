@@ -330,27 +330,89 @@ app.registerExtension({
                     return true;
                 };
 
-                const moveFromSelectedChip = (direction) => {
-                    const chip = node.inlineComposerSelectedChip;
-                    if (!chip) return false;
-                    const rect = chip.getBoundingClientRect();
-                    const lineHeight = Number.parseFloat(getComputedStyle(composer).lineHeight) || rect.height;
-                    const pointY = direction < 0 ? rect.top - lineHeight / 2 : rect.bottom + lineHeight / 2;
-                    const pointX = rect.left + Math.min(rect.width / 2, 8);
-                    const caret = document.caretPositionFromPoint?.(pointX, pointY);
-                    const range = caret
-                        ? (() => {
-                            const next = document.createRange();
-                            next.setStart(caret.offsetNode, caret.offset);
-                            next.collapse(true);
-                            return next;
-                        })()
-                        : document.caretRangeFromPoint?.(pointX, pointY);
-                    if (!range || !composer.contains(range.startContainer)) return false;
+                const caretTextFrom = root => {
+                    let text = "";
+                    const walk = parent => {
+                        for (const child of parent.childNodes) {
+                            if (child.nodeType === Node.TEXT_NODE) text += withoutCaretAnchors(child.nodeValue);
+                            else if (child.nodeName === "BR") text += "\n";
+                            else if (child.classList?.contains("dynamic-tag-chip")) text += "\uFFFC";
+                            else walk(child);
+                        }
+                    };
+                    walk(root);
+                    return text;
+                };
+
+                const rangeAtCaretOffset = offset => {
+                    const walker = document.createTreeWalker(composer, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+                        acceptNode(current) {
+                            if (current.nodeType === Node.TEXT_NODE) {
+                                return current.parentElement?.closest(".dynamic-tag-chip")
+                                    ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+                            }
+                            return current.nodeName === "BR" || current.classList?.contains("dynamic-tag-chip")
+                                ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+                        },
+                    });
+                    let remaining = Math.max(0, offset);
+                    let current;
+                    while ((current = walker.nextNode())) {
+                        const range = document.createRange();
+                        if (current.nodeType === Node.TEXT_NODE) {
+                            const length = withoutCaretAnchors(current.nodeValue).length;
+                            if (!length) continue;
+                            if (remaining <= length) {
+                                let rawOffset = 0;
+                                let logicalOffset = 0;
+                                while (rawOffset < current.nodeValue.length
+                                    && (logicalOffset < remaining || current.nodeValue[rawOffset] === CARET_ANCHOR)) {
+                                    if (current.nodeValue[rawOffset] !== CARET_ANCHOR) logicalOffset++;
+                                    rawOffset++;
+                                }
+                                range.setStart(current, rawOffset);
+                                range.collapse(true);
+                                return range;
+                            }
+                            remaining -= length;
+                        } else if (remaining <= 1) {
+                            if (remaining === 0) range.setStartBefore(current);
+                            else range.setStartAfter(current);
+                            range.collapse(true);
+                            return range;
+                        } else remaining--;
+                    }
+                    const range = document.createRange();
+                    range.selectNodeContents(composer);
+                    range.collapse(false);
+                    return range;
+                };
+
+                const moveCaretVertically = direction => {
                     const selection = window.getSelection();
+                    if (!selection?.rangeCount || !selection.isCollapsed || !composer.contains(selection.anchorNode)) return false;
+                    const before = selection.getRangeAt(0).cloneRange();
+                    before.selectNodeContents(composer);
+                    before.setEnd(selection.anchorNode, selection.anchorOffset);
+                    const offset = caretTextFrom(before.cloneContents()).length;
+                    const lines = caretTextFrom(composer).split("\n");
+                    let line = 0;
+                    let lineStart = 0;
+                    while (line < lines.length - 1 && offset > lineStart + lines[line].length) {
+                        lineStart += lines[line].length + 1;
+                        line++;
+                    }
+                    const targetLine = line + direction;
+                    if (targetLine < 0 || targetLine >= lines.length) return false;
+                    if (!lines[line].includes("\uFFFC") && !lines[targetLine].includes("\uFFFC")) return false;
+                    const column = Math.max(0, offset - lineStart);
+                    let targetOffset = 0;
+                    for (let index = 0; index < targetLine; index++) targetOffset += lines[index].length + 1;
+                    targetOffset += Math.min(column, lines[targetLine].length);
+                    const range = rangeAtCaretOffset(targetOffset);
                     selection.removeAllRanges();
                     selection.addRange(range);
-                    chip.classList.remove("selected");
+                    node.inlineComposerSelectedChip?.classList.remove("selected");
                     node.inlineComposerSelectedChip = null;
                     return true;
                 };
@@ -687,7 +749,7 @@ app.registerExtension({
                         dismissCompletion();
                     }
                     if ((event.key === "ArrowUp" || event.key === "ArrowDown")
-                        && moveFromSelectedChip(event.key === "ArrowUp" ? -1 : 1)) {
+                        && moveCaretVertically(event.key === "ArrowUp" ? -1 : 1)) {
                         event.preventDefault();
                         return;
                     }
