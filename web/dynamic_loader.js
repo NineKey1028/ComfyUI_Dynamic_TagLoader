@@ -188,6 +188,21 @@ app.registerExtension({
                     const match = before.match(/(?:^|[\s,])@([^\s,@]*)$/);
                     return match ? { selection, textNode: selection.focusNode, start: selection.focusOffset - match[0].length + (match[0].startsWith("@") ? 0 : 1), query: match[1] } : null;
                 };
+                const getCaretRect = () => {
+                    const selection = window.getSelection();
+                    if (!selection?.rangeCount || !composer.contains(selection.focusNode)) return null;
+                    const range = document.createRange();
+                    range.setStart(selection.focusNode, selection.focusOffset);
+                    range.collapse(true);
+                    let rect = range.getClientRects()[0];
+                    if (!rect?.height && selection.focusNode.nodeType === Node.TEXT_NODE
+                        && selection.focusOffset > 0) {
+                        range.setStart(selection.focusNode, selection.focusOffset - 1);
+                        const previous = range.getBoundingClientRect();
+                        rect = { left: previous.right, bottom: previous.bottom, height: previous.height };
+                    }
+                    return rect?.height ? rect : null;
+                };
 
                 let menuEntries = [];
                 let menuIndex = 0;
@@ -253,10 +268,13 @@ app.registerExtension({
                         button.addEventListener("mousedown", event => { event.preventDefault(); insertTagFromMenu(entry); });
                         return button;
                     }));
-                    const rect = composer.getBoundingClientRect();
-                    menu.style.left = `${rect.left}px`;
-                    menu.style.top = `${Math.min(rect.bottom + 3, window.innerHeight - 220)}px`;
                     menu.hidden = false;
+                    const rect = getCaretRect() || composer.getBoundingClientRect();
+                    const top = rect.bottom + 4;
+                    const available = Math.max(0, window.innerHeight - top - 8);
+                    menu.style.maxHeight = `${Math.min(210, available)}px`;
+                    menu.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 4))}px`;
+                    menu.style.top = `${top}px`;
                     return true;
                 };
 
