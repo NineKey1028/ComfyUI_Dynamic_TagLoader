@@ -275,6 +275,7 @@ app.registerExtension({
                     menu.style.maxHeight = `${Math.min(210, available)}px`;
                     menu.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 4))}px`;
                     menu.style.top = `${top}px`;
+                    menu.querySelector("button.active")?.scrollIntoView({ block: "nearest" });
                     return true;
                 };
 
