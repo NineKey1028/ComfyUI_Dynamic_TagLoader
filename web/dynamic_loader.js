@@ -97,6 +97,13 @@ app.registerExtension({
                     return result;
                 }, []);
 
+                // Chromium needs a real inline caret stop beside a
+                // contenteditable=false element, especially when the element
+                // is the first item after a BR. This character is editor-only
+                // and is removed from every serialized representation.
+                const CARET_ANCHOR = "\u200B";
+                const withoutCaretAnchors = text => String(text).replaceAll(CARET_ANCHOR, "");
+
                 const makeChip = (segment) => {
                     // Keep chips directly in the editor's text flow. An
                     // editable inline wrapper confuses native vertical caret
@@ -129,8 +136,10 @@ app.registerExtension({
                     };
                     chip.addEventListener("click", selectChip);
 
-                    if (Number(segment.strength ?? 1) === 1) token.append(chip);
-                    else token.append("(", chip, chipWeightSuffix(segment.strength));
+                    const before = document.createTextNode(CARET_ANCHOR);
+                    const after = document.createTextNode(CARET_ANCHOR);
+                    if (Number(segment.strength ?? 1) === 1) token.append(before, chip, after);
+                    else token.append("(", before, chip, after, chipWeightSuffix(segment.strength));
                     return token;
                 };
 
@@ -157,7 +166,7 @@ app.registerExtension({
 
                 const serializeComposer = () => {
                     const segments = [];
-                    const appendText = (text) => segments.push({ type: "text", text });
+                    const appendText = (text) => segments.push({ type: "text", text: withoutCaretAnchors(text) });
                     const walk = (element) => {
                         for (const child of element.childNodes) {
                             if (child.nodeType === Node.TEXT_NODE) appendText(child.nodeValue);
@@ -173,7 +182,7 @@ app.registerExtension({
                 };
 
                 const appendComposerText = (parent, text) => {
-                    const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+                    const lines = withoutCaretAnchors(text).replace(/\r\n?/g, "\n").split("\n");
                     lines.forEach((line, index) => {
                         if (index) parent.append(document.createElement("br"));
                         if (line) parent.append(document.createTextNode(line));
@@ -194,7 +203,7 @@ app.registerExtension({
                     const selection = window.getSelection();
                     if (!selection?.rangeCount || !composer.contains(selection.focusNode) || selection.focusNode?.nodeType !== Node.TEXT_NODE) return null;
                     const before = selection.focusNode.nodeValue.slice(0, selection.focusOffset);
-                    const match = before.match(/(?:^|[\s,])@([^\s,@]*)$/);
+                    const match = before.match(/(?:^|[\s,\u200B])@([^\s,@]*)$/);
                     return match ? { selection, textNode: selection.focusNode, start: selection.focusOffset - match[0].length + (match[0].startsWith("@") ? 0 : 1), query: match[1] } : null;
                 };
                 const getCaretRect = () => {
@@ -294,13 +303,31 @@ app.registerExtension({
                     let container = selection.focusNode;
                     let sibling = null;
                     if (container?.nodeType === Node.TEXT_NODE) {
-                        if ((direction < 0 && selection.focusOffset !== 0) || (direction > 0 && selection.focusOffset !== container.nodeValue.length)) return null;
+                        const before = withoutCaretAnchors(container.nodeValue.slice(0, selection.focusOffset));
+                        const after = withoutCaretAnchors(container.nodeValue.slice(selection.focusOffset));
+                        if ((direction < 0 && before.length) || (direction > 0 && after.length)) return null;
                         sibling = direction < 0 ? container.previousSibling : container.nextSibling;
                     } else if (container === composer) {
                         sibling = composer.childNodes[selection.focusOffset + (direction < 0 ? -1 : 0)];
                     }
                     if (sibling?.nodeType !== Node.ELEMENT_NODE) return null;
                     return sibling.classList.contains("dynamic-tag-chip") ? sibling : null;
+                };
+
+                const moveAcrossAdjacentChip = (direction) => {
+                    const selected = node.inlineComposerSelectedChip;
+                    const chip = selected || adjacentChip(direction);
+                    if (!chip) return false;
+                    const range = document.createRange();
+                    if (direction < 0) range.setStartBefore(chip);
+                    else range.setStartAfter(chip);
+                    range.collapse(true);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    selected?.classList.remove("selected");
+                    node.inlineComposerSelectedChip = null;
+                    return true;
                 };
 
                 const moveFromSelectedChip = (direction) => {
@@ -332,7 +359,7 @@ app.registerExtension({
                     let text = "";
                     const walk = node => {
                         for (const child of node.childNodes) {
-                            if (child.nodeType === Node.TEXT_NODE) text += child.nodeValue;
+                            if (child.nodeType === Node.TEXT_NODE) text += withoutCaretAnchors(child.nodeValue);
                             else if (child.nodeName === "BR") text += "\n";
                             else walk(child);
                         }
@@ -366,7 +393,8 @@ app.registerExtension({
                     let current;
                     while ((current = walker.nextNode())) {
                         if (current.nodeType === Node.TEXT_NODE) {
-                            const length = current.nodeValue.length;
+                            const visible = withoutCaretAnchors(current.nodeValue);
+                            const length = visible.length;
                             // At an exact text-node boundary prefer the next
                             // DOM position.  A range ending inside the prior
                             // node is visually equivalent, but Chromium can
@@ -378,7 +406,16 @@ app.registerExtension({
                                 const chip = current.parentElement?.closest(".dynamic-tag-chip");
                                 if (chip && remaining === 0) range.setStartBefore(chip);
                                 else if (chip && remaining === length) range.setStartAfter(chip);
-                                else range.setStart(current, remaining);
+                                else {
+                                    let rawOffset = 0;
+                                    let logicalOffset = 0;
+                                    while (rawOffset < current.nodeValue.length
+                                        && (logicalOffset < remaining || current.nodeValue[rawOffset] === CARET_ANCHOR)) {
+                                        if (current.nodeValue[rawOffset] !== CARET_ANCHOR) logicalOffset++;
+                                        rawOffset++;
+                                    }
+                                    range.setStart(current, rawOffset);
+                                }
                                 range.collapse(true);
                                 return range;
                             }
@@ -654,6 +691,12 @@ app.registerExtension({
                         event.preventDefault();
                         return;
                     }
+                    if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey
+                        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+                        && moveAcrossAdjacentChip(event.key === "ArrowLeft" ? -1 : 1)) {
+                        event.preventDefault();
+                        return;
+                    }
                     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
                         node.inlineComposerSelectedChip?.classList.remove("selected");
                         node.inlineComposerSelectedChip = null;
@@ -689,7 +732,7 @@ app.registerExtension({
                     }
                     fragment.querySelectorAll(".dynamic-tag-chip").forEach(chip =>
                         chip.replaceWith(document.createTextNode("@{" + tagKey(chip.dataset.folder, chip.dataset.file) + "}")));
-                    return fragment.textContent;
+                    return withoutCaretAnchors(fragment.textContent);
                 };
                 const pasteTextIntoComposer = (pasted, selectInserted = false) => {
                     const selection = window.getSelection();
