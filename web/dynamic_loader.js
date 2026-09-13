@@ -358,7 +358,13 @@ app.registerExtension({
                     while ((current = walker.nextNode())) {
                         if (current.nodeType === Node.TEXT_NODE) {
                             const length = current.nodeValue.length;
-                            if (remaining <= length) {
+                            // At an exact text-node boundary prefer the next
+                            // DOM position.  A range ending inside the prior
+                            // node is visually equivalent, but Chromium can
+                            // split a contenteditable line there while
+                            // replacing it and move the following punctuation
+                            // onto a new line.
+                            if (remaining < length) {
                                 const range = document.createRange();
                                 const chip = current.parentElement?.closest(".dynamic-tag-chip");
                                 if (chip && remaining === 0) range.setStartBefore(chip);
