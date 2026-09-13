@@ -255,7 +255,7 @@ app.registerExtension({
                     // the current index only while navigating the open menu.
                     if (menu.hidden) menuIndex = 0;
                     const query = trigger.query.toLowerCase();
-                    menuEntries = getTagEntries().filter(entry => entry.label.toLowerCase().includes(query)).slice(0, 100);
+                    menuEntries = getTagEntries().filter(entry => entry.label.toLowerCase().includes(query)).slice(0, 1000);
                     if (!menuEntries.length) {
                         closeMenu();
                         return false;
