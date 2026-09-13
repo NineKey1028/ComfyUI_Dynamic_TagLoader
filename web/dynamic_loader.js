@@ -172,10 +172,19 @@ app.registerExtension({
                     updateInlinePrompt();
                 };
 
+                const appendComposerText = (parent, text) => {
+                    const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+                    lines.forEach((line, index) => {
+                        if (index) parent.append(document.createElement("br"));
+                        if (line) parent.append(document.createTextNode(line));
+                    });
+                };
+
                 const renderComposer = () => {
                     composer.replaceChildren();
                     node.inlineComposerSegments.forEach(segment => {
-                        composer.append(segment.type === "tag" ? makeChip(segment) : document.createTextNode(segment.text));
+                        if (segment.type === "tag") composer.append(makeChip(segment));
+                        else appendComposerText(composer, segment.text);
                     });
                     if (!composer.childNodes.length) composer.append(document.createTextNode(""));
                     node.inlineComposerSelectedChip = null;
@@ -557,6 +566,26 @@ app.registerExtension({
                     serializeComposer();
                     if (!showMenu()) syncExTagProxy();
                 });
+                composer.addEventListener("beforeinput", event => {
+                    if (event.inputType !== "insertParagraph" && event.inputType !== "insertLineBreak") return;
+                    const selection = window.getSelection();
+                    if (!selection?.rangeCount || !composer.contains(selection.anchorNode)) return;
+                    event.preventDefault();
+                    const range = selection.getRangeAt(0);
+                    range.deleteContents();
+                    const br = document.createElement("br");
+                    const after = document.createTextNode("");
+                    range.insertNode(after);
+                    range.insertNode(br);
+                    range.setStart(after, 0);
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    composer.dispatchEvent(new InputEvent("input", {
+                        bubbles: true,
+                        inputType: event.inputType,
+                    }));
+                });
                 composer.addEventListener("blur", event => {
                     if (exTagCompleter?.dropdownController?.dropdown.contains(event.relatedTarget)) return;
                     dismissCompletion();
@@ -683,13 +712,13 @@ app.registerExtension({
                                 && (offset + entry.visible.length === text.length
                                     || /[\s,:)]/.test(text[offset + entry.visible.length])));
                             if (entry) {
-                                if (plain) fragment.append(document.createTextNode(plain));
+                                if (plain) appendComposerText(fragment, plain);
                                 plain = '';
                                 fragment.append(makeChip({...entry, strength: 1}));
                                 offset += entry.visible.length;
                             } else plain += text[offset++];
                         }
-                        if (plain) fragment.append(document.createTextNode(plain));
+                        if (plain) appendComposerText(fragment, plain);
                     };
                     const matcher = /@\{([^}]+)\}/g;
                     let lastIndex = 0;
