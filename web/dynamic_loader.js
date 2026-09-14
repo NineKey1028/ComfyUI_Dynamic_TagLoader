@@ -693,10 +693,14 @@ app.registerExtension({
                     const range = selection.getRangeAt(0);
                     range.deleteContents();
                     const br = document.createElement("br");
-                    const after = document.createTextNode("");
+                    // A trailing BR followed by an empty text node has no
+                    // rendered caret box in Chromium, making the first Enter
+                    // appear to do nothing. The editor-only anchor gives the
+                    // new line a real caret position without entering output.
+                    const after = document.createTextNode(CARET_ANCHOR);
                     range.insertNode(after);
                     range.insertNode(br);
-                    range.setStart(after, 0);
+                    range.setStart(after, after.nodeValue.length);
                     range.collapse(true);
                     selection.removeAllRanges();
                     selection.addRange(range);
