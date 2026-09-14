@@ -437,6 +437,27 @@ app.registerExtension({
                     return true;
                 };
 
+                const deleteAdjacentLineBreak = direction => {
+                    const selection = window.getSelection();
+                    if (!selection?.rangeCount || !selection.isCollapsed || !composer.contains(selection.anchorNode)) return false;
+                    const offset = currentCaretOffset(selection);
+                    const text = caretTextFrom(composer);
+                    const breakOffset = direction < 0 ? offset - 1 : offset;
+                    if (breakOffset < 0 || text[breakOffset] !== "\n") return false;
+                    const range = rangeAtCaretOffset(breakOffset);
+                    const end = rangeAtCaretOffset(breakOffset + 1);
+                    range.setEnd(end.startContainer, end.startOffset);
+                    range.deleteContents();
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    composer.dispatchEvent(new InputEvent("input", {
+                        bubbles: true,
+                        inputType: direction < 0 ? "deleteContentBackward" : "deleteContentForward",
+                    }));
+                    return true;
+                };
+
                 function composerTextFrom(root) {
                     let text = "";
                     const walk = node => {
@@ -801,6 +822,11 @@ app.registerExtension({
                             chip.remove();
                             node.inlineComposerSelectedChip = null;
                             serializeComposer();
+                            return;
+                        }
+                        if (deleteAdjacentLineBreak(event.key === "Backspace" ? -1 : 1)) {
+                            event.preventDefault();
+                            return;
                         }
                     }
                 });
