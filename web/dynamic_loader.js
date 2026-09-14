@@ -606,6 +606,9 @@ app.registerExtension({
                 };
 
                 let exTagCompleter = null;
+                let exTagItemPointerActive = false;
+                let exTagItemMouseDown = null;
+                let exTagItemClick = null;
                 let completionDismissed = false;
                 const dismissCompletion = () => {
                     completionDismissed = true;
@@ -663,6 +666,7 @@ app.registerExtension({
                         "@{" + tagKey(ref.dataset.folder, ref.dataset.file) + "}");
                     pasteTextIntoComposer(inserted);
                     exTagProxyValue = after;
+                    composer.focus();
                 });
                 import("/extensions/comfy-ex-tagcomplete/tag-complete/tag_completer.js")
                     .then(({ TagCompleter }) => {
@@ -671,6 +675,23 @@ app.registerExtension({
                         if (composerDisposed) return;
                         exTagCompleter = new TagCompleter(exTagProxy);
                         const dropdown = exTagCompleter.dropdownController;
+                        exTagItemMouseDown = event => {
+                            if (!event.target.closest?.(".jupo-tagcomplete-item")
+                                || event.target.closest?.(".jupo-tagcomplete-wikiLink")) return;
+                            // Keep the contenteditable selection alive until
+                            // ExTagComplete's click handler writes through its
+                            // hidden textarea. Do not affect viewport or
+                            // scrollbar interaction.
+                            exTagItemPointerActive = true;
+                            event.preventDefault();
+                        };
+                        exTagItemClick = event => {
+                            if (!event.target.closest?.(".jupo-tagcomplete-item")
+                                || event.target.closest?.(".jupo-tagcomplete-wikiLink")) return;
+                            setTimeout(() => { exTagItemPointerActive = false; }, 0);
+                        };
+                        dropdown.dropdown.addEventListener("mousedown", exTagItemMouseDown, true);
+                        dropdown.dropdown.addEventListener("click", exTagItemClick);
                         const originalShow = dropdown.show;
                         dropdown.show = function(...args) {
                             // A debounced search may finish after the user has
@@ -731,7 +752,9 @@ app.registerExtension({
                     }));
                 });
                 composer.addEventListener("blur", event => {
-                    if (exTagCompleter?.dropdownController?.dropdown.contains(event.relatedTarget)) return;
+                    if (exTagItemPointerActive
+                        || exTagCompleter?.dropdownController?.dropdown.contains(event.relatedTarget)
+                        || exTagCompleter?.dropdownController?.isMouseInteracting?.()) return;
                     dismissCompletion();
                 });
                 composer.addEventListener("pointerdown", dismissCompletion);
@@ -1037,6 +1060,13 @@ app.registerExtension({
                     window.removeEventListener("resize", closeMenuForCanvasChange);
                     window.removeEventListener("scroll", closeMenuForPageScroll, true);
                     canvasElement?.removeEventListener("wheel", closeMenuForCanvasChange);
+                    const exTagDropdown = exTagCompleter?.dropdownController?.dropdown;
+                    if (exTagDropdown && exTagItemMouseDown) {
+                        exTagDropdown.removeEventListener("mousedown", exTagItemMouseDown, true);
+                    }
+                    if (exTagDropdown && exTagItemClick) {
+                        exTagDropdown.removeEventListener("click", exTagItemClick);
+                    }
                     try { exTagCompleter?.destroy?.(); } catch { /* optional integration */ }
                     exTagCompleter = null;
                     delete composer.__dynamicTagClipboard;
