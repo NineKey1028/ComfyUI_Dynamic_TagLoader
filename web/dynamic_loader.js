@@ -844,7 +844,7 @@ app.registerExtension({
                     }
                     fragment.querySelectorAll(".dynamic-tag-chip").forEach(chip =>
                         chip.replaceWith(document.createTextNode("@{" + tagKey(chip.dataset.folder, chip.dataset.file) + "}")));
-                    return withoutCaretAnchors(fragment.textContent);
+                    return composerTextFrom(fragment);
                 };
                 const pasteTextIntoComposer = (pasted, selectInserted = false) => {
                     const selection = window.getSelection();
